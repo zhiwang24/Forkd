@@ -17,6 +17,7 @@ struct FoodRatingView: View, Identifiable {
     @State private var selected = 0
     @State private var hovered = 0 // not used on iOS but kept for parity
     @State private var isSubmitting = false
+    @State private var showThanks = false
 
     var body: some View {
         NavigationStack {
@@ -25,7 +26,10 @@ struct FoodRatingView: View, Identifiable {
                     info
                     rating
                     submit
-                    thanks
+                    if showThanks {
+                        thanks
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
                 }
                 .padding()
             }
@@ -33,6 +37,7 @@ struct FoodRatingView: View, Identifiable {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } } }
         }
+        .onDisappear(perform: onDisappearReset)
     }
 
     private var info: some View {
@@ -72,16 +77,22 @@ struct FoodRatingView: View, Identifiable {
     private var submit: some View {
         Button(action: handleSubmit) {
             HStack {
-                Image(systemName: isSubmitting ? "checkmark.circle" : "hand.thumbsup")
+                Image(systemName: isSubmitting ? "checkmark.circle" : (showThanks ? "checkmark.circle.fill" : "hand.thumbsup"))
                     .imageScale(.small)
                     .rotationEffect(.degrees(isSubmitting ? 360 : 0))
                     .animation(.linear(duration: isSubmitting ? 1 : 0), value: isSubmitting)
-                Text(isSubmitting ? "Submitting..." : "Submit Rating")
+                if isSubmitting {
+                    Text("Submitting...")
+                } else if showThanks {
+                    Text("Submitted")
+                } else {
+                    Text("Submit Rating")
+                }
             }
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent)
-        .disabled(selected == 0 || isSubmitting)
+        .disabled(selected == 0 || isSubmitting || showThanks)
     }
 
     private func handleSubmit() {
@@ -91,7 +102,9 @@ struct FoodRatingView: View, Identifiable {
             try? await Task.sleep(nanoseconds: 700_000_000)
             onSubmit(selected)
             isSubmitting = false
-            dismiss()
+            withAnimation {
+                showThanks = true
+            }
         }
     }
 
@@ -118,5 +131,11 @@ struct FoodRatingView: View, Identifiable {
         case 5: return "Excellent - Outstanding!"
         default: return "Tap a star to rate"
         }
+    }
+
+    // Reset the thanks flag when the view disappears so reopened view starts fresh
+    private func onDisappearReset() {
+        showThanks = false
+        isSubmitting = false
     }
 }
