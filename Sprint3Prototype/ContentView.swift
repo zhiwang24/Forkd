@@ -10,26 +10,57 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var theme: ThemeManager
+    @Environment(\.colorScheme) private var colorScheme
     @State private var path = NavigationPath()
+    @State private var showingBugReport = false
 
     var body: some View {
-        NavigationStack(path: $path) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    header
-                    ForEach(appState.halls) { hall in
-                        HallRow(hall: hall) {
-                            appState.selectedHall = hall
-                            path.append(hall)
+        ZStack {
+            NavigationStack(path: $path) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        header
+                        ForEach(appState.halls) { hall in
+                            HallRow(hall: hall) {
+                                appState.selectedHall = hall
+                                path.append(hall)
+                            }
                         }
+                        footer
                     }
-                    footer
+                    .padding()
                 }
-                .padding()
+                .navigationDestination(for: DiningHall.self) { hall in
+                    DiningHallDetailView(hall: hall, path: $path)
+                }
             }
-            .navigationDestination(for: DiningHall.self) { hall in
-                DiningHallDetailView(hall: hall, path: $path)
-            }
+
+            // Floating bug report button
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Button {
+                        showingBugReport = true
+                    } label: {
+                        Image(systemName: "ladybug.fill")
+                            .imageScale(.small)
+                            .foregroundColor(colorScheme == .dark ? Color.pink.opacity(0.95) : Color.red)
+                            .padding(14)
+                    }
+                    .background(Color(UIColor.secondarySystemBackground).opacity(0.95))
+                     .clipShape(Circle())
+                     .overlay(Circle().stroke(Color.accentColor.opacity(0.12), lineWidth: 1))
+                     .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.12), radius: 6, x: 0, y: 4)
+                     .padding(.trailing, 16)
+                     .padding(.bottom, 20)
+                     .buttonStyle(.plain)
+                 }
+             }
+         }
+        .sheet(isPresented: $showingBugReport) {
+            BugReportView()
+                .environmentObject(appState)
         }
         .onAppear {
             let list = appState.halls.map { "\($0.name): \($0.verifiedCount)" }.joined(separator: ", ")
