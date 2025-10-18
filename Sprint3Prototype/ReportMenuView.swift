@@ -19,6 +19,7 @@ struct ReportMenuView: View {
     @State private var reporter: String = ""
     @State private var isSubmitting: Bool = false
     @State private var alertMessage: String? = nil
+    @State private var showingAuth: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -77,6 +78,10 @@ struct ReportMenuView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.accentColor)
                     .disabled(isSubmitting || details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .sheet(isPresented: $showingAuth) {
+                        AuthView()
+                            .environmentObject(appState)
+                    }
 
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "exclamationmark.bubble").imageScale(.small).foregroundStyle(.blue)
@@ -103,6 +108,11 @@ struct ReportMenuView: View {
     }
 
     private func submitReport() {
+        guard let _ = appState.firebaseUser, appState.isVerified else {
+            alertMessage = "Please sign in with your @gatech.edu account and verify your email before submitting reports."
+            showingAuth = true
+            return
+        }
         let trimmedDetails = details.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedDetails.isEmpty else {
             alertMessage = "Please provide details about the issue."

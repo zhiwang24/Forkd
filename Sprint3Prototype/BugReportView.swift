@@ -17,6 +17,7 @@ struct BugReportView: View {
     @State private var reporter: String = ""
     @State private var isSubmitting: Bool = false
     @State private var alertMessage: String? = nil
+    @State private var showingAuth: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -74,6 +75,10 @@ struct BugReportView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.accentColor)
                     .disabled(isSubmitting || details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .sheet(isPresented: $showingAuth) {
+                        AuthView()
+                            .environmentObject(appState)
+                    }
 
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "ladybug.fill").imageScale(.small).foregroundStyle(.blue)
@@ -100,6 +105,11 @@ struct BugReportView: View {
     }
 
     private func submitReport() {
+        guard let user = appState.firebaseUser, appState.isVerified else {
+            alertMessage = "Please sign in with your @gatech.edu account and verify your email before submitting bug reports."
+            showingAuth = true
+            return
+        }
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedDetails = details.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else {
@@ -119,7 +129,8 @@ struct BugReportView: View {
             "title": trimmedTitle,
             "details": trimmedDetails,
             "timestamp": Timestamp(date: Date()),
-            "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+            "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
+            "reporterUID": user.uid
         ]
         if !reporter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             data["reporter"] = reporter.trimmingCharacters(in: .whitespacesAndNewlines)

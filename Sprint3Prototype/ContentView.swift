@@ -13,6 +13,8 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var path = NavigationPath()
     @State private var showingBugReport = false
+    @State private var showingAuth = false
+    @State private var showingProfile = false
 
     var body: some View {
         ZStack {
@@ -62,6 +64,14 @@ struct ContentView: View {
             BugReportView()
                 .environmentObject(appState)
         }
+        .sheet(isPresented: $showingAuth) {
+            AuthView()
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $showingProfile) {
+            ProfileView()
+                .environmentObject(appState)
+        }
         .onAppear {
             let list = appState.halls.map { "\($0.name): \($0.verifiedCount)" }.joined(separator: ", ")
             print("[ContentView] onAppear - halls verified counts -> \(list)")
@@ -71,7 +81,29 @@ struct ContentView: View {
     private var header: some View {
         VStack(spacing: 6) {
             HStack {
+                Button {
+                    if appState.firebaseUser == nil {
+                        showingAuth = true
+                    } else {
+                        showingProfile = true
+                    }
+                } label: {
+                    if let user = appState.firebaseUser {
+                        let initials = (user.displayName ?? "").split(separator: " ").compactMap { $0.first }.map { String($0) }.joined()
+                        Text(initials.isEmpty ? "Me" : initials)
+                            .font(.subheadline).bold()
+                            .padding(8)
+                            .background(Circle().fill(Color.accentColor.opacity(0.12)))
+                    } else {
+                        Image(systemName: "person.crop.circle")
+                            .imageScale(.large)
+                            .padding(6)
+                    }
+                }
+                .buttonStyle(.plain)
+
                 Spacer()
+
                 Button {
                     theme.toggle()
                 } label: {
