@@ -31,6 +31,10 @@ struct ContentView: View {
                 DiningHallDetailView(hall: hall, path: $path)
             }
         }
+        .onAppear {
+            let list = appState.halls.map { "\($0.name): \($0.verifiedCount)" }.joined(separator: ", ")
+            print("[ContentView] onAppear - halls verified counts -> \(list)")
+        }
     }
 
     private var header: some View {
@@ -97,6 +101,10 @@ struct HallRow: View {
                             Text("\(hall.menuItems.count) items available").font(.caption).foregroundStyle(.secondary)
                         }
                         Text("Updated \(hall.lastUpdated)").font(.caption).foregroundStyle(.secondary)
+                    }
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.seal.fill").imageScale(.small).foregroundStyle(.green)
+                        Text("Verified by \(hall.verifiedCount) student\(hall.verifiedCount == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Spacer()

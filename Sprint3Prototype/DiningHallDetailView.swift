@@ -14,6 +14,11 @@ struct DiningHallDetailView: View {
     @State private var showingWaitInput = false
     @State private var selectedItem: MenuItem? = nil
 
+    // Use a computed property to always read the latest hall data from AppState
+    private var currentHall: DiningHall {
+        appState.halls.first(where: { $0.id == hall.id }) ?? hall
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -52,7 +57,11 @@ struct DiningHallDetailView: View {
         HStack(alignment: .center, spacing: 12) {
             statusDot
             VStack(alignment: .leading, spacing: 2) {
-                Text("Open • Updated \(hall.lastUpdated)").font(.footnote).foregroundStyle(.secondary)
+                Text("Open • Updated \(currentHall.lastUpdated)").font(.footnote).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.seal.fill").imageScale(.small).foregroundStyle(.green)
+                    Text("Verified by \(currentHall.verifiedCount) student\(currentHall.verifiedCount == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer()
         }
@@ -60,7 +69,7 @@ struct DiningHallDetailView: View {
 
     private var statusDot: some View {
         let color: Color = {
-            switch hall.status { case .open: return .green; case .busy: return .yellow; case .closed: return .red; case .unknown: return .gray }
+            switch currentHall.status { case .open: return .green; case .busy: return .yellow; case .closed: return .red; case .unknown: return .gray }
         }()
         return Circle().fill(color).frame(width: 8, height: 8)
     }
@@ -76,7 +85,7 @@ struct DiningHallDetailView: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing) {
-                    Text(hall.waitTime)
+                    Text(currentHall.waitTime)
                         .font(.title2).bold()
                         .foregroundStyle(Color.accentColor)
                     Text("estimated")
@@ -106,9 +115,9 @@ struct DiningHallDetailView: View {
             HStack(spacing: 6) {
                 Image(systemName: "person.2")
                 Text("Today's Menu").font(.headline)
-                Text("(\(hall.menuItems.count) items)").font(.subheadline).foregroundStyle(.secondary)
+                Text("(\(currentHall.menuItems.count) items)").font(.subheadline).foregroundStyle(.secondary)
             }
-            ForEach(hall.menuItems) { item in
+            ForEach(currentHall.menuItems) { item in
                 Button {
                     selectedItem = item
                 } label: {
