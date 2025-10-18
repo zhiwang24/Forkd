@@ -13,8 +13,8 @@ struct DiningHallDetailView: View {
     @Binding var path: NavigationPath
     @State private var showingWaitInput = false
     @State private var selectedItem: MenuItem? = nil
+    @State private var showingReportSheet = false
 
-    // Use a computed property to always read the latest hall data from AppState
     private var currentHall: DiningHall {
         appState.halls.first(where: { $0.id == hall.id }) ?? hall
     }
@@ -31,6 +31,10 @@ struct DiningHallDetailView: View {
         }
         .navigationTitle(hall.name)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingReportSheet) {
+            ReportMenuView(hall: currentHall)
+                .environmentObject(appState)
+        }
         .sheet(item: $selectedItem) { item in
             FoodRatingView(hall: hall, item: item) { rating in
                 Task { try? await Task.sleep(nanoseconds: 700_000_000) }
@@ -149,6 +153,14 @@ struct DiningHallDetailView: View {
             Text("Thanks for keeping times accurate!").font(.subheadline).bold()
             Text("Share your real wait time after you eat so other students get up-to-date info.")
                 .font(.caption).foregroundStyle(.secondary)
+            
+            Button {
+                showingReportSheet = true
+            } label: {
+                Label("Report incorrect menu information", systemImage: "exclamationmark.bubble")
+            }
+            .buttonStyle(.bordered)
+            .padding(.top, 8)
         }
         .padding(12)
         .background(.thinMaterial)
