@@ -24,4 +24,5 @@ struct DiningHall: Identifiable, Hashable, Codable {
     var status: HallStatus
     var lastUpdated: String
     var menuItems: [MenuItem]
+    var verifiedCount: Int = 0
 }

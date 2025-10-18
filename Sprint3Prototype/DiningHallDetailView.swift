@@ -42,6 +42,10 @@ struct DiningHallDetailView: View {
                 }
             )
         }
+        .sheet(isPresented: $showingWaitInput) {
+            WaitTimeInputView(hall: hall)
+                .environmentObject(appState)
+        }
     }
 
     private var header: some View {
@@ -65,13 +69,19 @@ struct DiningHallDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 HStack(spacing: 8) {
-                    Image(systemName: "clock").imageScale(.medium).foregroundStyle(Color.accentColor)
+                    Image(systemName: "clock")
+                        .imageScale(.medium)
+                        .foregroundStyle(Color.accentColor)
                     Text("Current Wait Time").fontWeight(.medium)
                 }
                 Spacer()
                 VStack(alignment: .trailing) {
-                    Text(hall.waitTime).font(.title2).bold().foregroundStyle(Color.accentColor)
-                    Text("estimated").font(.caption).foregroundStyle(.secondary)
+                    Text(hall.waitTime)
+                        .font(.title2).bold()
+                        .foregroundStyle(Color.accentColor)
+                    Text("estimated")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             Button {
@@ -85,7 +95,10 @@ struct DiningHallDetailView: View {
         .padding(12)
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.accentColor.opacity(0.2)))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.accentColor.opacity(0.2))
+        )
     }
 
     private var menuList: some View {

@@ -41,6 +41,22 @@ struct WaitTimeInputView: View {
         }
         .card()
     }
+    
+    private var statusSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Update dining hall status")
+                .font(.subheadline).bold()
+            HStack {
+                ForEach(HallStatus.allCases, id: \.self) { status in
+                    Button(status.rawValue.capitalized) {
+                        appState.updateStatus(for: hall.id, to: status)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(status == hall.status ? .accentColor : .gray)
+                }
+            }
+        }
+    }
 
     private var inputSection: some View {
         VStack(alignment: .leading, spacing: 12) {

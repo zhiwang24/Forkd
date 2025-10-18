@@ -18,8 +18,14 @@ final class AppState: ObservableObject {
         let newText = minutes < 2 ? "1-2 min" : "\(max(1, minutes-1))-\(minutes+1) min"
         halls[idx].waitTime = newText
         halls[idx].lastUpdated = "just now"
+        halls[idx].verifiedCount += 1
     }
 
+    func updateStatus(for hallID: String, to newStatus: HallStatus) {
+        guard let idx = halls.firstIndex(where: { $0.id == hallID }) else { return }
+        halls[idx].status = newStatus
+    }
+    
     func submitRating(for itemID: String, in hallID: String, rating newRating: Int) {
         guard let hIdx = halls.firstIndex(where: { $0.id == hallID }) else { return }
         guard let iIdx = halls[hIdx].menuItems.firstIndex(where: { $0.id == itemID }) else { return }

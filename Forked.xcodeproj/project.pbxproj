@@ -24,9 +24,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		D95F361C2EA3439300617AE2 /* Sprint3Prototype.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sprint3Prototype.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		D95F36292EA3439500617AE2 /* Sprint3PrototypeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Sprint3PrototypeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		D95F36332EA3439500617AE2 /* Sprint3PrototypeUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Sprint3PrototypeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D95F361C2EA3439300617AE2 /* Forked.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Forked.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D95F36292EA3439500617AE2 /* ForkedTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ForkedTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D95F36332EA3439500617AE2 /* ForkedUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ForkedUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -85,9 +85,9 @@
 		D95F361D2EA3439300617AE2 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				D95F361C2EA3439300617AE2 /* Sprint3Prototype.app */,
-				D95F36292EA3439500617AE2 /* Sprint3PrototypeTests.xctest */,
-				D95F36332EA3439500617AE2 /* Sprint3PrototypeUITests.xctest */,
+				D95F361C2EA3439300617AE2 /* Forked.app */,
+				D95F36292EA3439500617AE2 /* ForkedTests.xctest */,
+				D95F36332EA3439500617AE2 /* ForkedUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,9 +95,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		D95F361B2EA3439300617AE2 /* Sprint3Prototype */ = {
+		D95F361B2EA3439300617AE2 /* Forked */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = D95F363D2EA3439500617AE2 /* Build configuration list for PBXNativeTarget "Sprint3Prototype" */;
+			buildConfigurationList = D95F363D2EA3439500617AE2 /* Build configuration list for PBXNativeTarget "Forked" */;
 			buildPhases = (
 				D95F36182EA3439300617AE2 /* Sources */,
 				D95F36192EA3439300617AE2 /* Frameworks */,
@@ -110,16 +110,16 @@
 			fileSystemSynchronizedGroups = (
 				D95F361E2EA3439300617AE2 /* Sprint3Prototype */,
 			);
-			name = Sprint3Prototype;
+			name = Forked;
 			packageProductDependencies = (
 			);
 			productName = Sprint3Prototype;
-			productReference = D95F361C2EA3439300617AE2 /* Sprint3Prototype.app */;
+			productReference = D95F361C2EA3439300617AE2 /* Forked.app */;
 			productType = "com.apple.product-type.application";
 		};
-		D95F36282EA3439500617AE2 /* Sprint3PrototypeTests */ = {
+		D95F36282EA3439500617AE2 /* ForkedTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = D95F36402EA3439500617AE2 /* Build configuration list for PBXNativeTarget "Sprint3PrototypeTests" */;
+			buildConfigurationList = D95F36402EA3439500617AE2 /* Build configuration list for PBXNativeTarget "ForkedTests" */;
 			buildPhases = (
 				D95F36252EA3439500617AE2 /* Sources */,
 				D95F36262EA3439500617AE2 /* Frameworks */,
@@ -133,16 +133,16 @@
 			fileSystemSynchronizedGroups = (
 				D95F362C2EA3439500617AE2 /* Sprint3PrototypeTests */,
 			);
-			name = Sprint3PrototypeTests;
+			name = ForkedTests;
 			packageProductDependencies = (
 			);
 			productName = Sprint3PrototypeTests;
-			productReference = D95F36292EA3439500617AE2 /* Sprint3PrototypeTests.xctest */;
+			productReference = D95F36292EA3439500617AE2 /* ForkedTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		D95F36322EA3439500617AE2 /* Sprint3PrototypeUITests */ = {
+		D95F36322EA3439500617AE2 /* ForkedUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = D95F36432EA3439500617AE2 /* Build configuration list for PBXNativeTarget "Sprint3PrototypeUITests" */;
+			buildConfigurationList = D95F36432EA3439500617AE2 /* Build configuration list for PBXNativeTarget "ForkedUITests" */;
 			buildPhases = (
 				D95F362F2EA3439500617AE2 /* Sources */,
 				D95F36302EA3439500617AE2 /* Frameworks */,
@@ -156,11 +156,11 @@
 			fileSystemSynchronizedGroups = (
 				D95F36362EA3439500617AE2 /* Sprint3PrototypeUITests */,
 			);
-			name = Sprint3PrototypeUITests;
+			name = ForkedUITests;
 			packageProductDependencies = (
 			);
 			productName = Sprint3PrototypeUITests;
-			productReference = D95F36332EA3439500617AE2 /* Sprint3PrototypeUITests.xctest */;
+			productReference = D95F36332EA3439500617AE2 /* ForkedUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -186,7 +186,7 @@
 					};
 				};
 			};
-			buildConfigurationList = D95F36172EA3439300617AE2 /* Build configuration list for PBXProject "Sprint3Prototype" */;
+			buildConfigurationList = D95F36172EA3439300617AE2 /* Build configuration list for PBXProject "Forked" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -200,9 +200,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				D95F361B2EA3439300617AE2 /* Sprint3Prototype */,
-				D95F36282EA3439500617AE2 /* Sprint3PrototypeTests */,
-				D95F36322EA3439500617AE2 /* Sprint3PrototypeUITests */,
+				D95F361B2EA3439300617AE2 /* Forked */,
+				D95F36282EA3439500617AE2 /* ForkedTests */,
+				D95F36322EA3439500617AE2 /* ForkedUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -258,12 +258,12 @@
 /* Begin PBXTargetDependency section */
 		D95F362B2EA3439500617AE2 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = D95F361B2EA3439300617AE2 /* Sprint3Prototype */;
+			target = D95F361B2EA3439300617AE2 /* Forked */;
 			targetProxy = D95F362A2EA3439500617AE2 /* PBXContainerItemProxy */;
 		};
 		D95F36352EA3439500617AE2 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = D95F361B2EA3439300617AE2 /* Sprint3Prototype */;
+			target = D95F361B2EA3439300617AE2 /* Forked */;
 			targetProxy = D95F36342EA3439500617AE2 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -456,7 +456,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sprint3Prototype.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Sprint3Prototype";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Forked.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Forked";
 			};
 			name = Debug;
 		};
@@ -474,7 +474,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sprint3Prototype.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Sprint3Prototype";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Forked.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Forked";
 			};
 			name = Release;
 		};
@@ -513,7 +513,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		D95F36172EA3439300617AE2 /* Build configuration list for PBXProject "Sprint3Prototype" */ = {
+		D95F36172EA3439300617AE2 /* Build configuration list for PBXProject "Forked" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D95F363B2EA3439500617AE2 /* Debug */,
@@ -522,7 +522,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		D95F363D2EA3439500617AE2 /* Build configuration list for PBXNativeTarget "Sprint3Prototype" */ = {
+		D95F363D2EA3439500617AE2 /* Build configuration list for PBXNativeTarget "Forked" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D95F363E2EA3439500617AE2 /* Debug */,
@@ -531,7 +531,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		D95F36402EA3439500617AE2 /* Build configuration list for PBXNativeTarget "Sprint3PrototypeTests" */ = {
+		D95F36402EA3439500617AE2 /* Build configuration list for PBXNativeTarget "ForkedTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D95F36412EA3439500617AE2 /* Debug */,
@@ -540,7 +540,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		D95F36432EA3439500617AE2 /* Build configuration list for PBXNativeTarget "Sprint3PrototypeUITests" */ = {
+		D95F36432EA3439500617AE2 /* Build configuration list for PBXNativeTarget "ForkedUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				D95F36442EA3439500617AE2 /* Debug */,
