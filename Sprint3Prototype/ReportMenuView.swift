@@ -21,38 +21,76 @@ struct ReportMenuView: View {
     @State private var alertMessage: String? = nil
 
     var body: some View {
-        NavigationView {
-            Form {
-                Section(header: Text("Which item is wrong or missing?")) {
-                    TextField("Item name (optional)", text: $itemName)
-                }
-
-                Section(header: Text("Details")) {
-                    TextEditor(text: $details)
-                        .frame(minHeight: 120)
-                }
-
-                Section(header: Text("Your contact (optional)")) {
-                    TextField("Name or email (optional)", text: $reporter)
-                }
-
-                if let msg = alertMessage {
-                    Section {
-                        Text(msg).foregroundColor(.red)
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "tag")
+                            Text("Which item is wrong or missing?")
+                                .font(.subheadline).bold()
+                        }
+                        TextField("Item name (optional)", text: $itemName)
+                            .textFieldStyle(.roundedBorder)
                     }
-                }
+                    .card()
 
-                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "text.bubble")
+                            Text("Details").font(.subheadline).bold()
+                        }
+                        TextEditor(text: $details)
+                            .frame(minHeight: 140)
+                            .padding(6)
+                            .background(Color.card)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    .card()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "person.crop.circle")
+                            Text("Your contact (optional)").font(.subheadline).bold()
+                        }
+                        TextField("GT email (optional)", text: $reporter)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    .card()
+
+                    if let msg = alertMessage {
+                        Text(msg)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    
                     Button(action: submitReport) {
-                        if isSubmitting {
-                            HStack { Spacer(); ProgressView(); Spacer() }
-                        } else {
-                            Text("Submit Report")
-                                .frame(maxWidth: .infinity)
+                        HStack {
+                            if isSubmitting { ProgressView().progressViewStyle(CircularProgressViewStyle()) }
+                            else { Image(systemName: "paperplane.fill") }
+                            Text(isSubmitting ? "Submitting..." : "Submit Report")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.accentColor)
+                    .disabled(isSubmitting || details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "exclamationmark.bubble").imageScale(.small).foregroundStyle(.blue)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Report issues you find").font(.subheadline).bold()
+                            Text("Thanks for helping keep menus accurate — we review reports and update menus accordingly.")
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    .disabled(isSubmitting || details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .padding(12)
+                    .background(Color.blue.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
+                .padding()
             }
             .navigationTitle("Report Menu Issue")
             .navigationBarTitleDisplayMode(.inline)
