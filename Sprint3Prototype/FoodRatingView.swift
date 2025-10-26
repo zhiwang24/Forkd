@@ -18,6 +18,9 @@ struct FoodRatingView: View, Identifiable {
     @State private var hovered = 0 // not used on iOS but kept for parity
     @State private var isSubmitting = false
     @State private var showThanks = false
+    @EnvironmentObject private var appState: AppState
+    @State private var alertMessage: String? = nil
+    @State private var showingAuth: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -26,6 +29,12 @@ struct FoodRatingView: View, Identifiable {
                     info
                     rating
                     submit
+                    if let msg = alertMessage {
+                        Text(msg)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     if showThanks {
                         thanks
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -37,6 +46,7 @@ struct FoodRatingView: View, Identifiable {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } } }
         }
+        .sheet(isPresented: $showingAuth) { AuthView().environmentObject(appState) }
         .onDisappear(perform: onDisappearReset)
     }
 
@@ -96,6 +106,12 @@ struct FoodRatingView: View, Identifiable {
     }
 
     private func handleSubmit() {
+        // Require a signed-in & verified GT account before allowing rating submissions
+        guard appState.firebaseUser != nil, appState.isVerified else {
+            alertMessage = "Please sign in with your @gatech.edu account and verify your email before submitting ratings."
+            showingAuth = true
+            return
+        }
         guard selected > 0 else { return }
         isSubmitting = true
         Task {

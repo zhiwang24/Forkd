@@ -14,6 +14,7 @@ struct DiningHallDetailView: View {
     @State private var showingWaitInput = false
     @State private var selectedItem: MenuItem? = nil
     @State private var showingReportSheet = false
+    @State private var showingAuth: Bool = false
 
     private var currentHall: DiningHall {
         appState.halls.first(where: { $0.id == hall.id }) ?? hall
@@ -40,16 +41,10 @@ struct DiningHallDetailView: View {
                 Task { try? await Task.sleep(nanoseconds: 700_000_000) }
                 appState.submitRating(for: item.id, in: hall.id, rating: rating)
             }
+            .environmentObject(appState)
         }
-        .sheet(item: $selectedItem) { item in
-            FoodRatingView(
-                hall: hall,
-                item: item,
-                onSubmit: { rating in
-                    Task { try? await Task.sleep(nanoseconds: 700_000_000) }
-                    appState.submitRating(for: item.id, in: hall.id, rating: rating)
-                }
-            )
+        .sheet(isPresented: $showingAuth) {
+            AuthView().environmentObject(appState)
         }
         .sheet(isPresented: $showingWaitInput) {
             WaitTimeInputView(hall: hall)
@@ -98,7 +93,11 @@ struct DiningHallDetailView: View {
                 }
             }
             Button {
-                showingWaitInput = true
+                if appState.firebaseUser != nil && appState.isVerified {
+                    showingWaitInput = true
+                } else {
+                    showingAuth = true
+                }
             } label: {
                 Label("Update wait time after eating", systemImage: "timer")
                     .frame(maxWidth: .infinity)
@@ -123,7 +122,12 @@ struct DiningHallDetailView: View {
             }
             ForEach(currentHall.menuItems) { item in
                 Button {
-                    selectedItem = item
+                    // if the user is not signed in/verified, prompt for auth first
+                    if appState.firebaseUser != nil && appState.isVerified {
+                        selectedItem = item
+                    } else {
+                        showingAuth = true
+                    }
                 } label: {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 6) {

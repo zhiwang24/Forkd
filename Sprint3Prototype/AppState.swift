@@ -120,7 +120,6 @@ final class AppState: ObservableObject {
             if let error = error { completion(error); return }
             guard let user = result?.user else { completion(NSError(domain: "Auth", code: 3, userInfo: [NSLocalizedDescriptionKey: "No user after sign-in"])) ; return }
             if !user.isEmailVerified {
-                // optionally sign out to prevent accidental access
                 do { try Auth.auth().signOut() } catch { /* ignore */ }
                 completion(NSError(domain: "Auth", code: 4, userInfo: [NSLocalizedDescriptionKey: "Please verify your @gatech.edu email before signing in."]))
                 return

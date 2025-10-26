@@ -13,6 +13,8 @@ struct WaitTimeInputView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var input: String = ""
     @State private var isSubmitting = false
+    @State private var alertMessage: String? = nil
+    @State private var showingAuth: Bool = false
 
     private let quick: [Int] = [1,2,3,4,5,8,10,15,20]
 
@@ -23,6 +25,12 @@ struct WaitTimeInputView: View {
                     currentCard
                     inputSection
                     submit
+                    if let msg = alertMessage {
+                        Text(msg)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     tip
                 }
                 .padding()
@@ -31,7 +39,10 @@ struct WaitTimeInputView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarLeading) { Button("Close") { dismiss() } } }
         }
-    }
+        .sheet(isPresented: $showingAuth) {
+            AuthView().environmentObject(appState)
+         }
+     }
 
     private var currentCard: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -96,6 +107,12 @@ struct WaitTimeInputView: View {
     }
 
     private func handleSubmit() {
+        // Require a signed-in & verified GT account before allowing updates
+        guard appState.firebaseUser != nil, appState.isVerified else {
+            alertMessage = "Please sign in with your @gatech.edu account and verify your email before submitting wait times."
+            showingAuth = true
+            return
+        }
         guard let minutes = Int(input), minutes > 0, minutes <= 60 else { return }
         isSubmitting = true
         Task {
@@ -120,4 +137,3 @@ struct WaitTimeInputView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
-
