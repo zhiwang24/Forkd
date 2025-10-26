@@ -152,4 +152,67 @@ final class AppState: ObservableObject {
             }
         }
     }
+
+    // MARK: - Nutrislice app-level helpers
+    /// Map known local hall IDs to Nutrislice district and school slug. Update as needed.
+    private func nutrisliceParamsForHallID(_ hallID: String) -> (district: String, slug: String)? {
+        let district = "techdining"
+        switch hallID {
+        case "1": return (district, "north-ave-dining-hall")
+        case "3": return (district, "west-village")
+        default: return nil
+        }
+    }
+
+    /// Compute meal key using the same schedule as the UI. Returns nil if outside meal windows.
+    private func mealKeyForNow() -> String? {
+        let cal = Calendar.current
+        let hour = cal.component(.hour, from: Date())
+        if (hour >= 9 && hour < 12) { return "breakfast" }
+        if (hour >= 12 && hour < 17) { return "lunch" }
+        if (hour >= 17 && hour < 20) { return "dinner" }
+        if (hour >= 21 && hour <= 23) || (hour >= 0 && hour < 2) { return "dinner" }
+        return nil
+    }
+
+    /// Fetch menus for all known Nutrislice-mapped halls when the app launches.
+    /// Defaults to "breakfast" if no meal window is active.
+    @MainActor
+    func fetchMenusOnLaunch() async {
+        let mealKey = mealKeyForNow() ?? "breakfast"
+        for hall in halls {
+            guard let params = nutrisliceParamsForHallID(hall.id) else { continue }
+            await fetchMenuFromNutrislice(for: hall.id, district: params.district, schoolSlug: params.slug, meal: mealKey, date: Date(), debugDump: false)
+            // small polite pause between requests
+            try? await Task.sleep(nanoseconds: 80_000_000)
+        }
+    }
+
+    // MARK: - Nutrislice integration
+    /// Fetch today's menu from Nutrislice for a given hall and update the corresponding `DiningHall.menuItems`.
+    /// Uses the shared `NutrisliceService` parser and maps items into the app's `MenuItem` model.
+    @MainActor
+    func fetchMenuFromNutrislice(for hallID: String, district: String, schoolSlug: String, meal: String = "breakfast", date: Date = Date(), debugDump: Bool = false) async {
+        guard let idx = halls.firstIndex(where: { $0.id == hallID }) else { return }
+        do {
+            // respect DEBUG build or explicit debugDump
+            let isDebugBuild: Bool = {
+                #if DEBUG
+                return true
+                #else
+                return false
+                #endif
+            }()
+            let doDebug = debugDump || isDebugBuild
+            let items = try await NutrisliceService.shared.fetchMenu(district: district, school: schoolSlug, meal: meal, date: date, debugDump: doDebug)
+            let mapped: [MenuItem] = items.map { nutri in
+                MenuItem(id: nutri.id, name: nutri.name, category: nutri.category, rating: 0.0, reviewCount: 0, labels: nutri.labels)
+            }
+            halls[idx].menuItems = mapped
+            halls[idx].lastUpdated = "just now"
+            print("[AppState] fetchMenuFromNutrislice -> updated \(halls[idx].name) with \(mapped.count) items")
+        } catch {
+            print("[AppState] fetchMenuFromNutrislice error: \(error)")
+        }
+    }
 }

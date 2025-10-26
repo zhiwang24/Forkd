@@ -75,6 +75,10 @@ struct ContentView: View {
         .onAppear {
             let list = appState.halls.map { "\($0.name): \($0.verifiedCount)" }.joined(separator: ", ")
             print("[ContentView] onAppear - halls verified counts -> \(list)")
+            // Fetch Nutrislice menus for known halls on app launch so menus are up-to-date immediately.
+            Task {
+                await appState.fetchMenusOnLaunch()
+            }
         }
     }
 

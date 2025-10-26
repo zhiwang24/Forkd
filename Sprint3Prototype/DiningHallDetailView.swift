@@ -15,9 +15,22 @@ struct DiningHallDetailView: View {
     @State private var selectedItem: MenuItem? = nil
     @State private var showingReportSheet = false
     @State private var showingAuth: Bool = false
+    @State private var collapsedStations: Set<String> = []
 
     private var currentHall: DiningHall {
         appState.halls.first(where: { $0.id == hall.id }) ?? hall
+    }
+
+    private func isCollapsed(_ category: String) -> Bool {
+        collapsedStations.contains(category)
+    }
+
+    private func toggleCollapsed(_ category: String) {
+        if collapsedStations.contains(category) {
+            collapsedStations.remove(category)
+        } else {
+            collapsedStations.insert(category)
+        }
     }
 
     var body: some View {
@@ -32,6 +45,9 @@ struct DiningHallDetailView: View {
         }
         .navigationTitle(hall.name)
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadNutrisliceMenuIfAvailable()
+        }
         .sheet(isPresented: $showingReportSheet) {
             ReportMenuView(hall: currentHall)
                 .environmentObject(appState)
@@ -63,6 +79,12 @@ struct DiningHallDetailView: View {
                 }
             }
             Spacer()
+        }
+        // DEBUG: Long-press the header to trigger a debug fetch that prints + writes the raw Nutrislice JSON for inspection.
+        .onLongPressGesture {
+            Task {
+                await loadNutrisliceMenuIfAvailable(debugDump: true)
+            }
         }
     }
 
@@ -120,34 +142,72 @@ struct DiningHallDetailView: View {
                 Text("Today's Menu").font(.headline)
                 Text("(\(currentHall.menuItems.count) items)").font(.subheadline).foregroundStyle(.secondary)
             }
-            ForEach(currentHall.menuItems) { item in
-                Button {
-                    // if the user is not signed in/verified, prompt for auth first
-                    if appState.firebaseUser != nil && appState.isVerified {
-                        selectedItem = item
-                    } else {
-                        showingAuth = true
-                    }
-                } label: {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 8) {
-                                Text(item.name).fontWeight(.medium)
-                                Badge(text: item.category, tint: categoryTint(item.category))
-                            }
-                            HStack(spacing: 8) {
-                                RatingStars(rating: item.rating)
-                                Text(String(format: "%.1f", item.rating)).font(.subheadline).fontWeight(.medium)
-                                Text("(\(item.reviewCount) reviews)").font(.caption).foregroundStyle(.secondary)
+
+            let grouped = Dictionary(grouping: currentHall.menuItems, by: { $0.category.isEmpty ? "Other" : $0.category })
+            let sortedCategories = grouped.keys.sorted()
+
+            ForEach(sortedCategories, id: \ .self) { category in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Button(action: { withAnimation { toggleCollapsed(category) } }) {
+                            HStack(alignment: .center, spacing: 8) {
+                                Image(systemName: isCollapsed(category) ? "chevron.right" : "chevron.down")
+                                    .foregroundStyle(.secondary)
+                                Text(category).font(.subheadline).fontWeight(.semibold)
                             }
                         }
+                        .buttonStyle(.plain)
+
                         Spacer()
-                        Text("Rate").foregroundStyle(.secondary)
+
+                        Text("\(grouped[category]?.count ?? 0) items").font(.caption).foregroundStyle(.secondary)
                     }
-                    .padding(12)
-                    .card()
+
+                    if !isCollapsed(category) {
+                        LazyVStack(spacing: 8) {
+                            ForEach(grouped[category] ?? [], id: \ .id) { item in
+                                Button {
+                                    if appState.firebaseUser != nil && appState.isVerified {
+                                        selectedItem = item
+                                    } else {
+                                        showingAuth = true
+                                    }
+                                } label: {
+                                    HStack(alignment: .top) {
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            HStack(spacing: 8) {
+                                                Text(item.name).fontWeight(.medium)
+                                            }
+                                            HStack(spacing: 8) {
+                                                RatingStars(rating: item.rating)
+                                                Text(String(format: "%.1f", item.rating)).font(.subheadline).fontWeight(.medium)
+                                                Text("(\(item.reviewCount) reviews)").font(.caption).foregroundStyle(.secondary)
+                                            }
+                                            // Labels (allergens/tags) from Nutrislice — show small chips
+                                            if !item.labels.isEmpty {
+                                                HStack(spacing: 6) {
+                                                    ForEach(item.labels, id: \.self) { label in
+                                                        Text(label)
+                                                            .font(.caption2)
+                                                            .padding(.vertical, 4)
+                                                            .padding(.horizontal, 6)
+                                                            .background(Color.secondary.opacity(0.12))
+                                                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Spacer()
+                                        Text("Rate").foregroundStyle(.secondary)
+                                    }
+                                    .padding(12)
+                                    .card()
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
                 }
-                .buttonStyle(.plain)
             }
         }
     }
@@ -169,5 +229,50 @@ struct DiningHallDetailView: View {
         .padding(12)
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    // MARK: - Nutrislice loader
+    /// Map known dining halls to nutrislice slugs and fetch today's breakfast menu.
+    private func nutrisliceParams(for hall: DiningHall) -> (district: String, slug: String)? {
+        // Georgia Tech Nutrislice district
+        let district = "techdining"
+        switch hall.id {
+        case "1": // North Ave Dining (sample data id)
+            return (district, "north-ave-dining-hall")
+        case "3": // West Village (sample data id)
+            return (district, "west-village")
+        default:
+            return nil
+        }
+    }
+
+    // MARK: - Time / meal helpers
+    /// Returns the current meal key according to the schedule:
+    /// - Breakfast: 9:00 - 11:59 (9-12)
+    /// - Lunch: 12:00 - 16:59 (12-17)
+    /// - Dinner: 17:00 - 19:59 (17-20)
+    /// - Overnight: 21:00 - 01:59 (21-2) -> mapped to "dinner" for Nutrislice because Nutrislice deployments typically use breakfast/lunch/dinner.
+    /// Times are local device times. If the current time doesn't fall into any bucket, method returns nil.
+    private func currentMealKey(for date: Date = Date()) -> String? {
+        let cal = Calendar.current
+        let hour = cal.component(.hour, from: date)
+
+        if (hour >= 9 && hour < 12) { return "breakfast" }
+        if (hour >= 12 && hour < 17) { return "lunch" }
+        if (hour >= 17 && hour < 20) { return "dinner" }
+        // overnight: 21-23 or 0-1
+        if (hour >= 21 && hour <= 23) || (hour >= 0 && hour < 2) { return "dinner" } // map overnight to dinner
+
+        return nil
+    }
+
+    private func loadNutrisliceMenuIfAvailable(debugDump: Bool = false) async {
+        guard let params = nutrisliceParams(for: currentHall) else { return }
+        // If debugDump is requested, allow fetching even outside the strict meal windows so developers
+        // can inspect raw JSON at any time. When no meal window applies, pick a sensible default (breakfast).
+        let mealKey = currentMealKey()
+        if mealKey == nil && !debugDump { return } // in normal mode, do not fetch outside meal windows
+        let effectiveMeal = mealKey ?? "breakfast"
+        await appState.fetchMenuFromNutrislice(for: currentHall.id, district: params.district, schoolSlug: params.slug, meal: effectiveMeal, debugDump: debugDump)
     }
 }

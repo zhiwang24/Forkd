@@ -13,6 +13,7 @@ struct MenuItem: Identifiable, Hashable, Codable {
     var category: String
     var rating: Double
     var reviewCount: Int
+    var labels: [String] = []
 }
 
 enum HallStatus: String, Codable, CaseIterable { case open, busy, closed, unknown }
