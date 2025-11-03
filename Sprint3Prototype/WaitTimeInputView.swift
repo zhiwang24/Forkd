@@ -117,9 +117,16 @@ struct WaitTimeInputView: View {
         isSubmitting = true
         Task {
             try? await Task.sleep(nanoseconds: 700_000_000)
-            appState.updateWaitTime(for: hall.id, to: minutes)
+            let res = appState.updateWaitTime(for: hall.id, to: minutes)
             isSubmitting = false
-            dismiss()
+            if res.success {
+                dismiss()
+            } else {
+                alertMessage = res.message ?? "Failed to submit."
+                if let msg = res.message, msg.lowercased().contains("verify") {
+                    showingAuth = true
+                }
+            }
         }
     }
 

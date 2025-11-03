@@ -20,6 +20,17 @@ final class AppState: ObservableObject {
     @Published var firebaseUser: User? = Auth.auth().currentUser
     @Published var isVerified: Bool = Auth.auth().currentUser?.isEmailVerified ?? false
 
+    // Post-auth intent: when a user is sent to AuthView, we can record an intent to automatically open a target UI after successful sign-in/verification.
+    @Published var postAuthOpenWaitHallID: String? = nil
+
+    func setPostAuthOpenWaitIntent(hallID: String) {
+        postAuthOpenWaitHallID = hallID
+    }
+
+    func clearPostAuthIntent() {
+        postAuthOpenWaitHallID = nil
+    }
+
     private var authHandle: AuthStateDidChangeListenerHandle? = nil
 
     init() {
@@ -52,13 +63,72 @@ final class AppState: ObservableObject {
         if let h = authHandle { Auth.auth().removeStateDidChangeListener(h) }
     }
 
-    func updateWaitTime(for hallID: String, to minutes: Int) {
-        guard let idx = halls.firstIndex(where: { $0.id == hallID }) else { return }
+    // ===== Submission gating & client-side cooldowns =====
+    // Persist per-hall+action last-submission timestamps to UserDefaults to prevent rapid repeat submissions.
+    private enum SubmissionAction: String {
+        case waitTime = "waitTime"
+        case rating = "rating"
+        case seating = "seating"
+    }
+
+    // Default cooldown window in seconds (5 minutes). Tweakable for experiments.
+    private let submissionCooldownSeconds: TimeInterval = 5 * 60
+
+    private func lastSubmissionKey(hallID: String, action: SubmissionAction) -> String {
+        return "lastSubmission:\(hallID):\(action.rawValue)"
+    }
+
+    /// Returns (allowed, remainingSeconds).
+    private func canSubmit(hallID: String, action: SubmissionAction) -> (allowed: Bool, remaining: TimeInterval) {
+        let key = lastSubmissionKey(hallID: hallID, action: action)
+        let last = UserDefaults.standard.double(forKey: key) // 0.0 if missing
+        let now = Date().timeIntervalSince1970
+        if last == 0 { return (true, 0) }
+        let elapsed = now - last
+        if elapsed >= submissionCooldownSeconds { return (true, 0) }
+        return (false, submissionCooldownSeconds - elapsed)
+    }
+
+    private func recordSubmission(hallID: String, action: SubmissionAction) {
+        let key = lastSubmissionKey(hallID: hallID, action: action)
+        let now = Date().timeIntervalSince1970
+        UserDefaults.standard.set(now, forKey: key)
+        // Ensure changes are written out quickly
+        UserDefaults.standard.synchronize()
+    }
+
+    /// Public helper for UI to show remaining cooldown in seconds (0 means allowed now)
+    func submissionCooldownRemainingSeconds(hallID: String, actionRaw: String) -> TimeInterval {
+        guard let action = SubmissionAction(rawValue: actionRaw) else { return 0 }
+        let res = canSubmit(hallID: hallID, action: action)
+        return res.allowed ? 0 : res.remaining
+    }
+
+    func updateWaitTime(for hallID: String, to minutes: Int) -> (success: Bool, message: String?) {
+        // Enforce verified-user gating
+        guard isVerified else {
+            let msg = "Please verify your @gatech.edu email before submitting."
+            print("[AppState] updateWaitTime - blocked: user not verified")
+            return (false, msg)
+        }
+        // Rate limit per-hall per-action
+        let action: SubmissionAction = .waitTime
+        let allowed = canSubmit(hallID: hallID, action: action)
+        guard allowed.allowed else {
+            let msg = "Please wait \(Int(allowed.remaining))s before submitting another update for this dining hall."
+            print("[AppState] updateWaitTime - blocked by cooldown, remaining: \(Int(allowed.remaining))s")
+            return (false, msg)
+        }
+
+        guard let idx = halls.firstIndex(where: { $0.id == hallID }) else { return (false, nil) }
         let newText = minutes < 2 ? "1-2 min" : "\(max(1, minutes-1))-\(minutes+1) min"
         halls[idx].waitTime = newText
         halls[idx].lastUpdated = "just now"
         halls[idx].verifiedCount += 1
+        // record submission time
+        recordSubmission(hallID: hallID, action: action)
         print("[AppState] updateWaitTime - \(halls[idx].name) verifiedCount -> \(halls[idx].verifiedCount)")
+        return (true, nil)
     }
 
     func updateStatus(for hallID: String, to newStatus: HallStatus) {
@@ -66,16 +136,34 @@ final class AppState: ObservableObject {
         halls[idx].status = newStatus
     }
     
-    func submitRating(for itemID: String, in hallID: String, rating newRating: Int) {
-        guard let hIdx = halls.firstIndex(where: { $0.id == hallID }) else { return }
-        guard let iIdx = halls[hIdx].menuItems.firstIndex(where: { $0.id == itemID }) else { return }
+    func submitRating(for itemID: String, in hallID: String, rating newRating: Int) -> (success: Bool, message: String?) {
+        // Enforce verified-user gating
+        guard isVerified else {
+            let msg = "Please verify your @gatech.edu email before submitting ratings."
+            print("[AppState] submitRating - blocked: user not verified")
+            return (false, msg)
+        }
+        // Rate limit per-hall per-action
+        let action: SubmissionAction = .rating
+        let allowed = canSubmit(hallID: hallID, action: action)
+        guard allowed.allowed else {
+            let msg = "Please wait \(Int(allowed.remaining))s before submitting another rating for this dining hall."
+            print("[AppState] submitRating - blocked by cooldown, remaining: \(Int(allowed.remaining))s")
+            return (false, msg)
+        }
+
+        guard let hIdx = halls.firstIndex(where: { $0.id == hallID }) else { return (false, nil) }
+        guard let iIdx = halls[hIdx].menuItems.firstIndex(where: { $0.id == itemID }) else { return (false, nil) }
         var item = halls[hIdx].menuItems[iIdx]
         let total = item.rating * Double(item.reviewCount) + Double(newRating)
         item.reviewCount += 1
         item.rating = total / Double(item.reviewCount)
         halls[hIdx].menuItems[iIdx] = item
         halls[hIdx].verifiedCount += 1
+        // record submission time
+        recordSubmission(hallID: hallID, action: action)
         print("[AppState] submitRating - \(halls[hIdx].name) verifiedCount -> \(halls[hIdx].verifiedCount)")
+        return (true, nil)
     }
     
     // MARK: - Authentication helpers
@@ -85,7 +173,7 @@ final class AppState: ObservableObject {
             completion(NSError(domain: "SignUp", code: 1, userInfo: [NSLocalizedDescriptionKey: "Please use a @gatech.edu email."]))
             return
         }
-        Auth.auth().createUser(withEmail: lower, password: password) { [weak self] result, error in
+        Auth.auth().createUser(withEmail: lower, password: password) { result, error in
             if let error = error { completion(error); return }
             guard let user = result?.user else { completion(NSError(domain: "SignUp", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unknown user after signup"])) ; return }
             // Send verification email

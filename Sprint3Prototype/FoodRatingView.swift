@@ -11,7 +11,7 @@ struct FoodRatingView: View, Identifiable {
     var id: String { item.id }
     let hall: DiningHall
     let item: MenuItem
-    var onSubmit: (Int) -> Void
+    var onSubmit: (Int) -> (Bool, String?)
     @Environment(\.dismiss) private var dismiss
 
     @State private var selected = 0
@@ -116,10 +116,15 @@ struct FoodRatingView: View, Identifiable {
         isSubmitting = true
         Task {
             try? await Task.sleep(nanoseconds: 700_000_000)
-            onSubmit(selected)
+            let res = onSubmit(selected)
             isSubmitting = false
-            withAnimation {
-                showThanks = true
+            if res.0 {
+                withAnimation { showThanks = true }
+            } else {
+                alertMessage = res.1 ?? "Failed to submit rating."
+                if let msg = res.1, msg.lowercased().contains("verify") {
+                    showingAuth = true
+                }
             }
         }
     }

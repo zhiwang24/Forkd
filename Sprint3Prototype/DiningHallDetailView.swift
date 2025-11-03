@@ -48,14 +48,23 @@ struct DiningHallDetailView: View {
         .task {
             await loadNutrisliceMenuIfAvailable()
         }
+        .onReceive(appState.$isVerified) { verified in
+            // If the user just became verified and there is a post-auth intent for this hall, open the wait-time input automatically.
+            if verified {
+                if let target = appState.postAuthOpenWaitHallID, target == hall.id {
+                    showingWaitInput = true
+                    appState.clearPostAuthIntent()
+                }
+            }
+        }
         .sheet(isPresented: $showingReportSheet) {
             ReportMenuView(hall: currentHall)
                 .environmentObject(appState)
         }
         .sheet(item: $selectedItem) { item in
             FoodRatingView(hall: hall, item: item) { rating in
-                Task { try? await Task.sleep(nanoseconds: 700_000_000) }
-                appState.submitRating(for: item.id, in: hall.id, rating: rating)
+                // Call AppState.submitRating which now returns (Bool, String?) to indicate success or blocked reason
+                return appState.submitRating(for: item.id, in: hall.id, rating: rating)
             }
             .environmentObject(appState)
         }
@@ -118,6 +127,8 @@ struct DiningHallDetailView: View {
                 if appState.firebaseUser != nil && appState.isVerified {
                     showingWaitInput = true
                 } else {
+                    // record intent so after signing in / verifying the app can automatically open the wait time input
+                    appState.setPostAuthOpenWaitIntent(hallID: hall.id)
                     showingAuth = true
                 }
             } label: {
