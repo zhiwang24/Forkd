@@ -23,7 +23,7 @@ struct ContentView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         header
-                        ForEach(appState.halls) { hall in
+                        ForEach(sortedHalls) { hall in
                             HallRow(hall: hall) {
                                 appState.selectedHall = hall
                                 path.append(hall)
@@ -147,6 +147,26 @@ struct ContentView: View {
         .card()
         .padding(.top, 8)
     }
+
+    // Halls sorted by proximity to the user's last known location.
+    // Halls with a calculable distance appear first (closest -> farthest). Halls without location/distance are ordered by name and appear last.
+    private var sortedHalls: [DiningHall] {
+        let mgr = appState.locationManager
+        return appState.halls.sorted { a, b in
+            func distance(for h: DiningHall) -> Double? {
+                guard let lat = h.lat, let lon = h.lon else { return nil }
+                return mgr.distanceTo(lat: lat, lon: lon)
+            }
+            let da = distance(for: a)
+            let db = distance(for: b)
+            switch (da, db) {
+            case let (a?, b?): return a < b
+            case (nil, nil): return a.name < b.name
+            case (nil, _?): return false
+            case (_?, nil): return true
+            }
+        }
+    }
 }
 
 struct HallRow: View {
@@ -169,26 +189,32 @@ struct HallRow: View {
                             Image(systemName: "clock").imageScale(.small).foregroundStyle(Color.accentColor)
                             Text(hall.waitTime).fontWeight(.semibold).foregroundStyle(Color.accentColor)
                         }
-                        statusBadge
+                        seatingIndicator
+                    }
+                    HStack(spacing: 6) {
+                        openClosedLabel
                     }
                     HStack(spacing: 16) {
                         HStack(spacing: 4) {
                             Image(systemName: "person.2").imageScale(.small)
                             Text("\(hall.menuItems.count) items available").font(.caption).foregroundStyle(.secondary)
                         }
-                        Text("Updated \(hall.lastUpdated)").font(.caption).foregroundStyle(.secondary)
                     }
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.seal.fill").imageScale(.small).foregroundStyle(.green)
-                        Text("Verified by \(hall.verifiedCount) student\(hall.verifiedCount == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                        Text("Verified by \(hall.verifiedCount) student\(hall.verifiedCount == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Text("• Updated \(hall.lastUpdatedText(now: appState.now))").font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                     }
+                    .layoutPriority(1)
                 }
                 Spacer()
                 VStack(alignment: .trailing) {
-                    Text(leadingWaitNumber)
-                        .font(.title2).bold().foregroundStyle(Color.accentColor)
-                    Text("min wait").font(.caption).foregroundStyle(.secondary)
-
                     // Actionable distance UI: show formatted distance if available, otherwise provide request/open-settings actions.
                     if let lat = hall.lat, let lon = hall.lon {
                         if let meters = appState.locationManager.distanceTo(lat: lat, lon: lon) {
@@ -245,28 +271,64 @@ struct HallRow: View {
         .buttonStyle(.plain)
     }
 
-    private var leadingWaitNumber: String {
-        // Extract the first number from e.g. "5-10 min"
-        let comps = hall.waitTime.split(separator: " ").first ?? "0"
-        let range = comps.split(separator: "-").first ?? comps
-        return String(range)
+    // Prominent seating-based Busy/Not busy indicator derived from student seating reports
+    private var seatingIndicator: some View {
+        let s = hall.seating?.lowercased() ?? ""
+        let (label, color): (String, Color) = {
+            if s.contains("plenty") || s.contains("some") { return ("Not busy", .green) }
+            if s.contains("few") || s.contains("packed") { return ("Busy", .orange) }
+            return ("No reports", .gray)
+        }()
+
+        return HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Circle().fill(color).frame(width: 10, height: 10)
+                Text(label).font(.subheadline).fontWeight(.semibold)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(color.opacity(0.12))
+            .clipShape(Capsule())
+        }
     }
 
-    private var statusBadge: some View {
-        let text: String
-        let color: Color
-        switch hall.status {
-        case .open: text = "Open"; color = .green
-        case .busy: text = "Busy"; color = .yellow
-        case .closed: text = "Closed"; color = .red
-        case .unknown: text = "Unknown"; color = .gray
-        }
+    // Compact open/closed label to show near the updated/hours text (Google Maps style)
+    private var openClosedLabel: some View {
+        let (text, color): (String, Color) = {
+            switch hall.status {
+            case .open: return ("Open", .green)
+            case .closed: return ("Closed", .red)
+            case .busy: return ("Open", .orange) // busy is represented by seating indicator
+            case .unknown: return ("Temporarily Closed", .red)
+            }
+        }()
+
+        // Build an optional hours note depending on status and available model fields
+        let hoursNote: String? = {
+            // Prefer showing closing time when open, opening time when closed.
+            if hall.status == .open {
+                if let closes = hall.closesAt, !closes.isEmpty { return "‧ Closes \(closes)" }
+            } else if hall.status == .closed {
+                if let opens = hall.opensAt, !opens.isEmpty { return "‧ Opens \(opens)" }
+            } else if hall.status == .unknown {
+                return " "
+            } else {
+                // busy/unknown: show either closes or opens if available
+                if let closes = hall.closesAt, !closes.isEmpty { return "‧ Closes \(closes)" }
+                if let opens = hall.opensAt, !opens.isEmpty { return "‧ Opens \(opens)" }
+            }
+            return nil
+        }()
+
         return HStack(spacing: 6) {
-            Circle().fill(color).frame(width: 8, height: 8)
-            Text(text).font(.caption).bold()
+            Text(text)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(color)
+            if let note = hoursNote {
+                Text("\(note)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .padding(.horizontal, 8).padding(.vertical, 6)
-        .background(color.opacity(0.12))
-        .clipShape(Capsule())
     }
 }

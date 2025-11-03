@@ -81,7 +81,7 @@ struct DiningHallDetailView: View {
         HStack(alignment: .center, spacing: 12) {
             statusDot
             VStack(alignment: .leading, spacing: 2) {
-                Text("Open • Updated \(currentHall.lastUpdated)").font(.footnote).foregroundStyle(.secondary)
+                Text("Updated \(currentHall.lastUpdatedText(now: appState.now))").font(.footnote).foregroundStyle(.secondary)
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.seal.fill").imageScale(.small).foregroundStyle(.green)
                     Text("Verified by \(currentHall.verifiedCount) student\(currentHall.verifiedCount == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)

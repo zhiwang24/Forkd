@@ -11,41 +11,51 @@ enum SampleData {
     static let halls: [DiningHall] = [
         DiningHall(
             id: "1",
-            name: "North Ave Dining",
+            name: "North Ave",
             waitTime: "5-10 min",
             status: .open,
-            lastUpdated: "2m ago",
-            menuItems: [
-                MenuItem(id: "m1", name: "Margherita Pizza", category: "Pizza", rating: 4.2, reviewCount: 128),
-                MenuItem(id: "m2", name: "Chicken Caesar", category: "Salads", rating: 3.9, reviewCount: 76),
-                MenuItem(id: "m3", name: "Tomato Soup", category: "Soup", rating: 4.5, reviewCount: 52)
-            ],
+            lastUpdatedAt: Date().addingTimeInterval(-2 * 60).timeIntervalSince1970,
+            menuItems: [],
             verifiedCount: 142,
             lat: 33.7712846105461,
-            lon: -84.39142581349368
+            lon: -84.39142581349368,
+            seating: "Some",
+            seatingLastUpdated: "Now",
+            seatingVerifiedCount: 34,
+            opensAt: "7am",
+            closesAt: "8pm"
         ),
         DiningHall(
             id: "2",
             name: "Brittain",
             waitTime: "Closed",
-            status: .closed,
-            lastUpdated: "5m ago",
-            menuItems: [
-            ],
+            status: .unknown,
+            lastUpdatedAt: Date().timeIntervalSince1970,
+            menuItems: [],
             verifiedCount: 89,
             lat: 33.77266789537731,
-            lon: -84.39129365983848
+            lon: -84.39129365983848,
+            seating: "Closed",
+            seatingLastUpdated: "Now",
+            seatingVerifiedCount: 0,
+            opensAt: "11am",
+            closesAt: "8pm"
         ),
         DiningHall(
             id: "3",
             name: "West Village",
-            waitTime: "10-15 min",
+            waitTime: "5-10 min",
             status: .open,
-            lastUpdated: "Today",
+            lastUpdatedAt: Date().addingTimeInterval(-30).timeIntervalSince1970,
             menuItems: [],
             verifiedCount: 5,
             lat: 33.77982273684821,
-            lon: -84.40470500216735
+            lon: -84.40470500216735,
+            seating: "Packed",
+            seatingLastUpdated: "Now",
+            seatingVerifiedCount: 2,
+            opensAt: "8am",
+            closesAt: "11pm"
         )
     ]
 }

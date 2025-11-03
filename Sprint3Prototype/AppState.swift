@@ -59,6 +59,8 @@ final class AppState: ObservableObject {
     enum PostLocationIntent: Equatable {
         case wait(hallID: String, minutes: Int)
         case rating(hallID: String, itemID: String, rating: Int)
+        case seating(hallID: String, seating: String)
+        case waitAndSeating(hallID: String, minutes: Int, seating: String?)
     }
 
     @Published var pendingLocationIntent: PostLocationIntent? = nil
@@ -70,6 +72,10 @@ final class AppState: ObservableObject {
     func clearPendingLocationIntent() {
         pendingLocationIntent = nil
     }
+
+    // Clock that ticks every minute so UI can update relative time labels like "now" / "2m ago".
+    @Published var now: Date = Date()
+    private var clockCancellable: AnyCancellable? = nil
 
     /// Check whether the user's last known location is within the geofence for a given hall.
     /// Returns (allowed: Bool, message: String?) where message explains failures.
@@ -144,6 +150,13 @@ final class AppState: ObservableObject {
             }
         }
 
+        // Periodic clock to refresh relative time UI
+        clockCancellable = Timer.publish(every: 60.0, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] date in
+                Task { @MainActor in self?.now = date }
+            }
+
         // Observe Firebase auth state
         authHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             let verified = user?.isEmailVerified ?? false
@@ -158,6 +171,7 @@ final class AppState: ObservableObject {
     deinit {
         if let h = authHandle { Auth.auth().removeStateDidChangeListener(h) }
         locationCancellable?.cancel()
+        clockCancellable?.cancel()
     }
 
     // ===== Submission gating & client-side cooldowns =====
@@ -228,7 +242,7 @@ final class AppState: ObservableObject {
         guard let idx = halls.firstIndex(where: { $0.id == hallID }) else { return (false, nil) }
         let newText = minutes < 2 ? "1-2 min" : "\(max(1, minutes-1))-\(minutes+1) min"
         halls[idx].waitTime = newText
-        halls[idx].lastUpdated = "just now"
+        halls[idx].lastUpdatedAt = Date().timeIntervalSince1970
         halls[idx].verifiedCount += 1
         // record submission time
         recordSubmission(hallID: hallID, action: action)
@@ -276,6 +290,42 @@ final class AppState: ObservableObject {
         // record submission time
         recordSubmission(hallID: hallID, action: action)
         print("[AppState] submitRating - \(halls[hIdx].name) verifiedCount -> \(halls[hIdx].verifiedCount)")
+        return (true, nil)
+    }
+    
+    /// Submit seating availability for a given hall (e.g. "Plenty", "Some", "Few", "Packed").
+    /// Enforces verified users, geofence, and per-hall cooldown similar to wait time submissions.
+    func submitSeating(for hallID: String, seating newSeating: String) -> (success: Bool, message: String?) {
+        // Enforce verified-user gating
+        guard isVerified else {
+            let msg = "Please verify your @gatech.edu email before submitting seating availability."
+            print("[AppState] submitSeating - blocked: user not verified")
+            return (false, msg)
+        }
+
+        // Client-side geofence check
+        let geo = checkGeofence(for: hallID)
+        guard geo.allowed else {
+            print("[AppState] submitSeating - blocked by geofence: \(geo.message ?? "no location")")
+            return (false, geo.message)
+        }
+
+        // Rate limit per-hall per-action
+        let action: SubmissionAction = .seating
+        let allowed = canSubmit(hallID: hallID, action: action)
+        guard allowed.allowed else {
+            let msg = "Please wait \(Int(allowed.remaining))s before submitting another seating update for this dining hall."
+            print("[AppState] submitSeating - blocked by cooldown, remaining: \(Int(allowed.remaining))s")
+            return (false, msg)
+        }
+
+        guard let idx = halls.firstIndex(where: { $0.id == hallID }) else { return (false, nil) }
+        halls[idx].seating = newSeating
+        halls[idx].seatingLastUpdated = "now"
+        halls[idx].seatingVerifiedCount += 1
+        // record submission time
+        recordSubmission(hallID: hallID, action: action)
+        print("[AppState] submitSeating - \(halls[idx].name) seating -> \(newSeating), verifiedCount -> \(halls[idx].seatingVerifiedCount)")
         return (true, nil)
     }
     
@@ -410,7 +460,6 @@ final class AppState: ObservableObject {
                 MenuItem(id: nutri.id, name: nutri.name, category: nutri.category, rating: 0.0, reviewCount: 0, labels: nutri.labels)
             }
             halls[idx].menuItems = mapped
-            halls[idx].lastUpdated = "just now"
             print("[AppState] fetchMenuFromNutrislice -> updated \(halls[idx].name) with \(mapped.count) items")
         } catch {
             print("[AppState] fetchMenuFromNutrislice error: \(error)")
