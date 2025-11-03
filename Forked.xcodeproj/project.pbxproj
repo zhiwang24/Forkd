@@ -33,6 +33,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		C57877AB2EB94B0600D59F9C /* Forked-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Forked-Info.plist"; sourceTree = "<group>"; };
 		D95F361C2EA3439300617AE2 /* Forked.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Forked.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D95F36292EA3439500617AE2 /* ForkedTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ForkedTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D95F36332EA3439500617AE2 /* ForkedUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ForkedUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -90,6 +91,7 @@
 		D95F36132EA3439300617AE2 = {
 			isa = PBXGroup;
 			children = (
+				C57877AB2EB94B0600D59F9C /* Forked-Info.plist */,
 				D95F361E2EA3439300617AE2 /* Sprint3Prototype */,
 				D95F362C2EA3439500617AE2 /* Sprint3PrototypeTests */,
 				D95F36362EA3439500617AE2 /* Sprint3PrototypeUITests */,
@@ -422,8 +424,10 @@
 				DEVELOPMENT_TEAM = MZZKFWXTLQ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Forked-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Fork'd";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.food-and-drink";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We need your location to verify you are at the dining hall when you submit wait times or ratings.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -452,8 +456,10 @@
 				DEVELOPMENT_TEAM = MZZKFWXTLQ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Forked-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Fork'd";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.food-and-drink";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We need your location to verify you are at the dining hall when you submit wait times or ratings.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

@@ -9,9 +9,62 @@ import SwiftUI
 import FirebaseCore
 import FirebaseAuth
 import FirebaseFirestore
+import CoreLocation
 
 @MainActor
 final class AppState: ObservableObject {
+    // Location manager for client-side geofence checks
+    @Published var locationManager = LocationManager()
+
+    // Geofence configuration (meters)
+    let geofenceRadiusMeters: Double = 150
+    let geofenceMaxAccuracyMeters: Double = 100
+
+    /// Post-location intent: when we request permission we may want to continue a pending action automatically once the user grants permission.
+    enum PostLocationIntent: Equatable {
+        case wait(hallID: String, minutes: Int)
+        case rating(hallID: String, itemID: String, rating: Int)
+    }
+
+    @Published var pendingLocationIntent: PostLocationIntent? = nil
+
+    func setPendingLocationIntent(_ intent: PostLocationIntent?) {
+        pendingLocationIntent = intent
+    }
+
+    func clearPendingLocationIntent() {
+        pendingLocationIntent = nil
+    }
+
+    /// Check whether the user's last known location is within the geofence for a given hall.
+    /// Returns (allowed: Bool, message: String?) where message explains failures.
+    func checkGeofence(for hallID: String) -> (allowed: Bool, message: String?) {
+        guard let hall = halls.first(where: { $0.id == hallID }) else { return (true, nil) }
+        guard let lat = hall.lat, let lon = hall.lon else {
+            // No coordinates configured for this hall - allow submission (server-side may validate later)
+            return (true, nil)
+        }
+        let auth = locationManager.authorizationStatus
+        switch auth {
+        case .authorizedAlways, .authorizedWhenInUse:
+            // Ensure we have a location
+            if let last = locationManager.lastLocation {
+                let res = locationManager.isWithinGeofence(lat: lat, lon: lon, radiusMeters: geofenceRadiusMeters, maxAccuracyMeters: geofenceMaxAccuracyMeters)
+                if res.inside { return (true, nil) }
+                let distText = res.distance != nil ? String(format: "%.0f", res.distance!) : "unknown"
+                return (false, "You seem to be \(distText)m away from the dining hall! You must be within \(Int(geofenceRadiusMeters))m to submit.")
+            } else {
+                return (false, "Location unavailable — please allow location access and try again.")
+            }
+        case .notDetermined:
+            return (false, "Location permission not requested yet")
+        case .restricted, .denied:
+            return (false, "Location access denied. Allow location access in Settings to verify submissions.")
+        @unknown default:
+            return (false, "Location unavailable")
+        }
+    }
+
     @Published var halls: [DiningHall] = SampleData.halls
     @Published var selectedHall: DiningHall? = nil
     @Published var selectedItem: MenuItem? = nil
@@ -111,6 +164,14 @@ final class AppState: ObservableObject {
             print("[AppState] updateWaitTime - blocked: user not verified")
             return (false, msg)
         }
+
+        // Client-side geofence check: ensure user is within geofence for this hall
+        let geo = checkGeofence(for: hallID)
+        guard geo.allowed else {
+            print("[AppState] updateWaitTime - blocked by geofence: \(geo.message ?? "no location")")
+            return (false, geo.message)
+        }
+
         // Rate limit per-hall per-action
         let action: SubmissionAction = .waitTime
         let allowed = canSubmit(hallID: hallID, action: action)
@@ -143,6 +204,14 @@ final class AppState: ObservableObject {
             print("[AppState] submitRating - blocked: user not verified")
             return (false, msg)
         }
+
+        // Client-side geofence check: ensure user is within geofence for this hall
+        let geo = checkGeofence(for: hallID)
+        guard geo.allowed else {
+            print("[AppState] submitRating - blocked by geofence: \(geo.message ?? "no location")")
+            return (false, geo.message)
+        }
+
         // Rate limit per-hall per-action
         let action: SubmissionAction = .rating
         let allowed = canSubmit(hallID: hallID, action: action)

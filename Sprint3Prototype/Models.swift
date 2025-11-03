@@ -26,4 +26,6 @@ struct DiningHall: Identifiable, Hashable, Codable {
     var lastUpdated: String
     var menuItems: [MenuItem]
     var verifiedCount: Int = 0
+    var lat: Double? = nil
+    var lon: Double? = nil
 }

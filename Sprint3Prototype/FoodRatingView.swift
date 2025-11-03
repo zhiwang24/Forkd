@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct FoodRatingView: View, Identifiable {
     var id: String { item.id }
@@ -113,9 +114,25 @@ struct FoodRatingView: View, Identifiable {
             return
         }
         guard selected > 0 else { return }
+
+        // Location permission & geofence check (if hall has coordinates)
+        let authStatus = appState.locationManager.authorizationStatus
+        if authStatus == .notDetermined {
+            appState.locationManager.requestPermission()
+            alertMessage = "Please allow location access in the prompt, then tap Submit Rating again to verify your presence."
+            return
+        }
+        if authStatus == .denied || authStatus == .restricted {
+            alertMessage = "Location access is denied. Allow location access in Settings to validate submissions."
+            return
+        }
+
+        // Request a location fix and wait briefly
+        appState.locationManager.requestLocation()
         isSubmitting = true
         Task {
-            try? await Task.sleep(nanoseconds: 700_000_000)
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            // Note: AppState.submitRating will also run a geofence check; we check here to provide immediate UX feedback.
             let res = onSubmit(selected)
             isSubmitting = false
             if res.0 {

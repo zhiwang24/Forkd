@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct WaitTimeInputView: View {
     @EnvironmentObject private var appState: AppState
@@ -15,6 +16,8 @@ struct WaitTimeInputView: View {
     @State private var isSubmitting = false
     @State private var alertMessage: String? = nil
     @State private var showingAuth: Bool = false
+    @State private var showOpenSettings: Bool = false
+    @State private var pendingAfterPermission: Bool = false
 
     private let quick: [Int] = [1,2,3,4,5,8,10,15,20]
 
@@ -42,6 +45,25 @@ struct WaitTimeInputView: View {
         .sheet(isPresented: $showingAuth) {
             AuthView().environmentObject(appState)
          }
+        .onReceive(appState.locationManager.$authorizationStatus) { status in
+            // If the user granted permission and we have a pending intent from this view, continue automatically
+            if pendingAfterPermission && (status == .authorizedWhenInUse || status == .authorizedAlways) {
+                pendingAfterPermission = false
+                // attempt the submission flow automatically
+                Task { await performPendingSubmit() }
+            }
+        }
+        if showOpenSettings {
+            VStack(alignment: .leading, spacing: 8) {
+                Button("Open Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(.horizontal)
+        }
      }
 
     private var currentCard: some View {
@@ -114,9 +136,38 @@ struct WaitTimeInputView: View {
             return
         }
         guard let minutes = Int(input), minutes > 0, minutes <= 60 else { return }
+        // Request a fresh location and check geofence before submitting.
+        // If permission hasn't been requested, ask the user to allow it first.
+        let authStatus = appState.locationManager.authorizationStatus
+        if authStatus == .notDetermined {
+            // record the pending intent so we can automatically continue when permission is granted
+            appState.setPendingLocationIntent(.wait(hallID: hall.id, minutes: minutes))
+            pendingAfterPermission = true
+            // trigger the system prompt
+            appState.locationManager.requestPermission()
+            alertMessage = "Please allow location access in the prompt; the app will continue automatically once permission is granted."
+            return
+        }
+        if authStatus == .denied || authStatus == .restricted {
+            alertMessage = "Location access is denied. Allow location access in Settings to validate submissions."
+            showOpenSettings = true
+            return
+        }
+
+        // Ask for a location update and wait briefly for the device to get a fix
+        appState.locationManager.requestLocation()
         isSubmitting = true
         Task {
-            try? await Task.sleep(nanoseconds: 700_000_000)
+            // small pause to allow location manager to deliver a fix
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            let geo = appState.checkGeofence(for: hall.id)
+            if !geo.allowed {
+                isSubmitting = false
+                alertMessage = geo.message ?? "Your location could not be verified."
+                if geo.message?.lowercased().contains("settings") == true { showOpenSettings = true }
+                return
+            }
+
             let res = appState.updateWaitTime(for: hall.id, to: minutes)
             isSubmitting = false
             if res.success {
@@ -128,6 +179,31 @@ struct WaitTimeInputView: View {
                 }
             }
         }
+    }
+
+    private func performPendingSubmit() async {
+        // Called after permission is granted to continue the pending submission
+        // Request a fresh location and then proceed
+        appState.locationManager.requestLocation()
+        isSubmitting = true
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        let geo = appState.checkGeofence(for: hall.id)
+        if !geo.allowed {
+            isSubmitting = false
+            alertMessage = geo.message ?? "Your location could not be verified."
+            return
+        }
+        // Parse minutes again from input; if missing, abort
+        guard let minutes = Int(input), minutes > 0 && minutes <= 60 else { isSubmitting = false; return }
+        let res = appState.updateWaitTime(for: hall.id, to: minutes)
+        isSubmitting = false
+        if res.success {
+            dismiss()
+        } else {
+            alertMessage = res.message ?? "Failed to submit."
+        }
+        // Clear pending intent stored in AppState
+        appState.clearPendingLocationIntent()
     }
 
     private var tip: some View {
