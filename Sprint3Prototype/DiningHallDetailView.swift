@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct DiningHallDetailView: View {
     @EnvironmentObject private var appState: AppState
@@ -15,10 +16,19 @@ struct DiningHallDetailView: View {
     @State private var selectedItem: MenuItem? = nil
     @State private var showingReportSheet = false
     @State private var showingAuth: Bool = false
+    @State private var menuSearch: String = ""
     @State private var collapsedStations: Set<String> = []
 
     private var currentHall: DiningHall {
         appState.halls.first(where: { $0.id == hall.id }) ?? hall
+    }
+
+    // Initialize collapsedStations to include all stations so the UI begins collapsed.
+    private func initializeCollapsedIfNeeded() {
+        // Don't overwrite if user already toggled
+        if !collapsedStations.isEmpty { return }
+        let categories = Set(currentHall.menuItems.map { $0.category.isEmpty ? "Other" : $0.category })
+        collapsedStations = categories
     }
 
     private func isCollapsed(_ category: String) -> Bool {
@@ -48,6 +58,8 @@ struct DiningHallDetailView: View {
         .task {
             await loadNutrisliceMenuIfAvailable()
         }
+        .onAppear { initializeCollapsedIfNeeded() }
+        .onChange(of: currentHall.menuItems.count) { _, _ in initializeCollapsedIfNeeded() }
         .onReceive(appState.$isVerified) { verified in
             // If the user just became verified and there is a post-auth intent for this hall, open the wait-time input automatically.
             if verified {
@@ -79,7 +91,6 @@ struct DiningHallDetailView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
-            statusDot
             VStack(alignment: .leading, spacing: 2) {
                 Text("Updated \(currentHall.lastUpdatedText(now: appState.now))").font(.footnote).foregroundStyle(.secondary)
                 HStack(spacing: 6) {
@@ -154,73 +165,126 @@ struct DiningHallDetailView: View {
                 Text("(\(currentHall.menuItems.count) items)").font(.subheadline).foregroundStyle(.secondary)
             }
 
-            let grouped = Dictionary(grouping: currentHall.menuItems, by: { $0.category.isEmpty ? "Other" : $0.category })
-            let sortedCategories = grouped.keys.sorted()
+            // Search field for today's menu
+            // Custom search bar with icon and clear button
+            searchBar
 
-            ForEach(sortedCategories, id: \ .self) { category in
+            // Filter items based on the search text (case-insensitive match on name or category)
+            let filtered = currentHall.menuItems.filter { item in
+                menuSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                item.name.range(of: menuSearch, options: .caseInsensitive) != nil ||
+                item.category.range(of: menuSearch, options: .caseInsensitive) != nil
+            }
+
+            if filtered.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Button(action: { withAnimation { toggleCollapsed(category) } }) {
-                            HStack(alignment: .center, spacing: 8) {
-                                Image(systemName: isCollapsed(category) ? "chevron.right" : "chevron.down")
-                                    .foregroundStyle(.secondary)
-                                Text(category).font(.subheadline).fontWeight(.semibold)
+                    Text("No menu items match your search.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    Text("Try removing filters or check a different dining hall.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(.vertical)
+            } else {
+                let grouped = Dictionary(grouping: filtered, by: { $0.category.isEmpty ? "Other" : $0.category })
+                let sortedCategories = grouped.keys.sorted()
+
+                ForEach(sortedCategories, id: \.self) { category in
+                    VStack(alignment: .leading, spacing: 8) {
+                        // Compute searching/collapse state at the VStack level so it is visible to both the header HStack and the content below.
+                        let isSearching = !menuSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        let hasMatches = ((grouped[category] ?? []).isEmpty == false)
+                        // A category is effectively collapsed when it is in collapsedStations and we're not in a search that has matches for it.
+                        let isEffectivelyCollapsed = isCollapsed(category) && !(isSearching && hasMatches)
+
+                        HStack(spacing: 8) {
+                            Button(action: { withAnimation { toggleCollapsed(category) } }) {
+                                HStack(alignment: .center, spacing: 8) {
+                                    Image(systemName: isEffectivelyCollapsed ? "chevron.right" : "chevron.down")
+                                        .foregroundStyle(.secondary)
+                                    Text(category).font(.subheadline).fontWeight(.semibold)
+                                }
                             }
+                            .buttonStyle(.plain)
+
+                            Spacer()
+
+                            Text("\(grouped[category]?.count ?? 0) items").font(.caption).foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.plain)
 
-                        Spacer()
-
-                        Text("\(grouped[category]?.count ?? 0) items").font(.caption).foregroundStyle(.secondary)
-                    }
-
-                    if !isCollapsed(category) {
-                        LazyVStack(spacing: 8) {
-                            ForEach(grouped[category] ?? [], id: \ .id) { item in
-                                Button {
-                                    if appState.firebaseUser != nil && appState.isVerified {
-                                        selectedItem = item
-                                    } else {
-                                        showingAuth = true
-                                    }
-                                } label: {
-                                    HStack(alignment: .top) {
-                                        VStack(alignment: .leading, spacing: 6) {
-                                            HStack(spacing: 8) {
-                                                Text(item.name).fontWeight(.medium)
-                                            }
-                                            HStack(spacing: 8) {
-                                                RatingStars(rating: item.rating)
-                                                Text(String(format: "%.1f", item.rating)).font(.subheadline).fontWeight(.medium)
-                                                Text("(\(item.reviewCount) reviews)").font(.caption).foregroundStyle(.secondary)
-                                            }
-                                            // Labels (allergens/tags) from Nutrislice — show small chips
-                                            if !item.labels.isEmpty {
-                                                HStack(spacing: 6) {
-                                                    ForEach(item.labels, id: \.self) { label in
-                                                        Text(label)
-                                                            .font(.caption2)
-                                                            .padding(.vertical, 4)
-                                                            .padding(.horizontal, 6)
-                                                            .background(Color.secondary.opacity(0.12))
-                                                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        if !isEffectivelyCollapsed {
+                            LazyVStack(spacing: 8) {
+                                ForEach(grouped[category] ?? [], id: \.id) { item in
+                                    Button {
+                                        if appState.firebaseUser != nil && appState.isVerified {
+                                            selectedItem = item
+                                        } else {
+                                            showingAuth = true
+                                        }
+                                    } label: {
+                                        HStack(alignment: .top) {
+                                            VStack(alignment: .leading, spacing: 6) {
+                                                HStack(spacing: 8) {
+                                                    Text(item.name).fontWeight(.medium)
+                                                }
+                                                HStack(spacing: 8) {
+                                                    RatingStars(rating: item.rating)
+                                                    Text(String(format: "%.1f", item.rating)).font(.subheadline).fontWeight(.medium)
+                                                    Text("(\(item.reviewCount) reviews)").font(.caption).foregroundStyle(.secondary)
+                                                }
+                                                // Labels (allergens/tags) from Nutrislice — show small chips
+                                                if !item.labels.isEmpty {
+                                                    HStack(spacing: 6) {
+                                                        ForEach(item.labels, id: \.self) { label in
+                                                            Text(label)
+                                                                .font(.caption2)
+                                                                .padding(.vertical, 4)
+                                                                .padding(.horizontal, 6)
+                                                                .background(Color.secondary.opacity(0.12))
+                                                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                                                        }
                                                     }
                                                 }
                                             }
+                                            Spacer()
+                                            Text("Rate").foregroundStyle(.secondary)
                                         }
-                                        Spacer()
-                                        Text("Rate").foregroundStyle(.secondary)
+                                        .padding(12)
+                                        .card()
                                     }
-                                    .padding(12)
-                                    .card()
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search menu items", text: $menuSearch)
+                .textInputAutocapitalization(.never)
+                .disableAutocorrection(true)
+            if !menuSearch.isEmpty {
+                Button(action: { menuSearch = "" }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(Color(UIColor.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.primary.opacity(0.03))
+        )
+        .padding(.vertical, 2)
     }
 
     private var helpText: some View {
@@ -271,7 +335,6 @@ struct DiningHallDetailView: View {
         if (hour >= 9 && hour < 12) { return "breakfast" }
         if (hour >= 12 && hour < 17) { return "lunch" }
         if (hour >= 17 && hour < 20) { return "dinner" }
-        // overnight: 21-23 or 0-1
         if (hour >= 21 && hour <= 23) || (hour >= 0 && hour < 2) { return "dinner" } // map overnight to dinner
 
         return nil
