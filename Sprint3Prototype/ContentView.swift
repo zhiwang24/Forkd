@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @EnvironmentObject private var appState: AppState
@@ -31,6 +32,11 @@ struct ContentView: View {
                         footer
                     }
                     .padding()
+                }
+                .refreshable {
+                    // Pull-to-refresh: refresh menus and request a fresh location update
+                    await appState.fetchMenusOnLaunch()
+                    appState.locationManager.requestLocation()
                 }
                 .navigationDestination(for: DiningHall.self) { hall in
                     DiningHallDetailView(hall: hall, path: $path)
@@ -147,6 +153,9 @@ struct HallRow: View {
     var hall: DiningHall
     var onTap: () -> Void
 
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.openURL) private var openURL
+
     var body: some View {
         Button(action: onTap) {
             HStack(alignment: .top) {
@@ -179,6 +188,54 @@ struct HallRow: View {
                     Text(leadingWaitNumber)
                         .font(.title2).bold().foregroundStyle(Color.accentColor)
                     Text("min wait").font(.caption).foregroundStyle(.secondary)
+
+                    // Actionable distance UI: show formatted distance if available, otherwise provide request/open-settings actions.
+                    if let lat = hall.lat, let lon = hall.lon {
+                        if let meters = appState.locationManager.distanceTo(lat: lat, lon: lon) {
+                            // show distance
+                            HStack(spacing: 6) {
+                                Image(systemName: "location.fill")
+                                    .imageScale(.small)
+                                    .foregroundStyle(.secondary)
+                                Text(appState.formattedDistance(fromMeters: meters))
+                                     .font(.caption)
+                                     .foregroundStyle(.secondary)
+                            }
+                            .padding(.top, 4)
+                        } else {
+                            // No location value yet — display an action based on authorization
+                            switch appState.locationManager.authorizationStatus {
+                            case .notDetermined:
+                                Button(action: { appState.locationManager.requestPermission() }) {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "location")
+                                            .imageScale(.small)
+                                        Text("Allow location")
+                                            .font(.caption)
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .padding(.top, 4)
+                            case .restricted, .denied:
+                                Button(action: {
+                                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                                        openURL(url)
+                                    }
+                                }) {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "gearshape.fill")
+                                            .imageScale(.small)
+                                        Text("Enable in Settings")
+                                            .font(.caption)
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .padding(.top, 4)
+                            default:
+                                Text("Location unknown").font(.caption).foregroundStyle(.secondary).padding(.top, 4)
+                            }
+                        }
+                    }
                 }
             }
             .padding(12)

@@ -21,19 +21,16 @@ enum SampleData {
                 MenuItem(id: "m3", name: "Tomato Soup", category: "Soup", rating: 4.5, reviewCount: 52)
             ],
             verifiedCount: 142,
-            lat: 33.7712846105461
+            lat: 33.7712846105461,
             lon: -84.39142581349368
         ),
         DiningHall(
             id: "2",
             name: "Brittain",
-            waitTime: "10-15 min",
-            status: .busy,
+            waitTime: "Closed",
+            status: .closed,
             lastUpdated: "5m ago",
             menuItems: [
-                MenuItem(id: "m4", name: "Spaghetti Bolognese", category: "Pasta", rating: 4.0, reviewCount: 201),
-                MenuItem(id: "m5", name: "Sushi Rolls", category: "Asian", rating: 3.6, reviewCount: 64),
-                MenuItem(id: "m6", name: "Turkey Club", category: "Sandwiches", rating: 4.1, reviewCount: 89)
             ],
             verifiedCount: 89,
             lat: 33.77266789537731,
@@ -42,12 +39,12 @@ enum SampleData {
         DiningHall(
             id: "3",
             name: "West Village",
-            waitTime: "Closed",
-            status: .closed,
+            waitTime: "10-15 min",
+            status: .open,
             lastUpdated: "Today",
             menuItems: [],
-            verifiedCount: 5
-            ,lat: 33.77982273684821,
+            verifiedCount: 5,
+            lat: 33.77982273684821,
             lon: -84.40470500216735
         )
     ]

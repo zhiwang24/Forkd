@@ -10,15 +10,50 @@ import FirebaseCore
 import FirebaseAuth
 import FirebaseFirestore
 import CoreLocation
+import Combine
 
 @MainActor
 final class AppState: ObservableObject {
     // Location manager for client-side geofence checks
     @Published var locationManager = LocationManager()
 
+    // Forwarding cancellable so we can notify observers when the LocationManager's internal state changes
+    private var locationCancellable: AnyCancellable? = nil
+
     // Geofence configuration (meters)
     let geofenceRadiusMeters: Double = 150
     let geofenceMaxAccuracyMeters: Double = 100
+
+    // User preference: metric vs imperial (persisted in UserDefaults)
+    @Published var prefersMetric: Bool = UserDefaults.standard.bool(forKey: "app.units.metric") {
+        didSet {
+            UserDefaults.standard.set(prefersMetric, forKey: "app.units.metric")
+        }
+    }
+
+    // Helper: format meters into a user-facing imperial string (feet or miles)
+    private func imperialString(fromMeters meters: Double) -> String {
+        let mileInMeters = 1609.344
+        if meters >= mileInMeters {
+            return String(format: "%.1f mi", meters / mileInMeters)
+        } else {
+            return String(format: "%.0f ft", meters * 3.28084)
+        }
+    }
+
+    // Helper: format meters into a user-facing metric string (meters or kilometers)
+    private func metricString(fromMeters meters: Double) -> String {
+        if meters >= 1000 {
+            return String(format: "%.1f km", meters / 1000.0)
+        } else {
+            return String(format: "%.0f m", meters)
+        }
+    }
+
+    // Unified formatter that respects user preference
+    func formattedDistance(fromMeters meters: Double) -> String {
+        return prefersMetric ? metricString(fromMeters: meters) : imperialString(fromMeters: meters)
+    }
 
     /// Post-location intent: when we request permission we may want to continue a pending action automatically once the user grants permission.
     enum PostLocationIntent: Equatable {
@@ -51,8 +86,9 @@ final class AppState: ObservableObject {
             if let last = locationManager.lastLocation {
                 let res = locationManager.isWithinGeofence(lat: lat, lon: lon, radiusMeters: geofenceRadiusMeters, maxAccuracyMeters: geofenceMaxAccuracyMeters)
                 if res.inside { return (true, nil) }
-                let distText = res.distance != nil ? String(format: "%.0f", res.distance!) : "unknown"
-                return (false, "You seem to be \(distText)m away from the dining hall! You must be within \(Int(geofenceRadiusMeters))m to submit.")
+                let distText = res.distance != nil ? formattedDistance(fromMeters: res.distance!) : "unknown"
+                let radiusText = formattedDistance(fromMeters: geofenceRadiusMeters)
+                return (false, "You seem to be \(distText) away from the dining hall! You must be within \(radiusText) to submit.")
             } else {
                 return (false, "Location unavailable — please allow location access and try again.")
             }
@@ -101,6 +137,13 @@ final class AppState: ObservableObject {
             print("[AppState] init - applied prototype verified counts -> \(updated)")
         }
 
+        // Subscribe to locationManager.objectWillChange and forward it through AppState's objectWillChange
+        locationCancellable = locationManager.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor in
+                self?.objectWillChange.send()
+            }
+        }
+
         // Observe Firebase auth state
         authHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             let verified = user?.isEmailVerified ?? false
@@ -114,6 +157,7 @@ final class AppState: ObservableObject {
 
     deinit {
         if let h = authHandle { Auth.auth().removeStateDidChangeListener(h) }
+        locationCancellable?.cancel()
     }
 
     // ===== Submission gating & client-side cooldowns =====

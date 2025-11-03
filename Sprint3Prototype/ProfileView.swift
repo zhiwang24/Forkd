@@ -40,6 +40,17 @@ struct ProfileView: View {
                     }
                     .padding()
 
+                    // Units preference (Metric / Imperial)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Units").font(.subheadline).bold()
+                        Picker("", selection: $appState.prefersMetric) {
+                            Text("Imperial").tag(false)
+                            Text("Metric").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    .padding([.leading, .trailing])
+
                     if let msg = errorMessage {
                         Text(msg).foregroundColor(.red).font(.caption).padding(.horizontal)
                     }
