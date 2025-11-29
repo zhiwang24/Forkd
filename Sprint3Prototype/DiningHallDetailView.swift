@@ -7,13 +7,13 @@
 
 import SwiftUI
 import UIKit
+import FirebaseFirestore
 
 struct DiningHallDetailView: View {
     @EnvironmentObject private var appState: AppState
     let hall: DiningHall
     @Binding var path: NavigationPath
     @State private var showingWaitInput = false
-    @State private var selectedItem: MenuItem? = nil
     @State private var showingReportSheet = false
     @State private var showingAuth: Bool = false
     @State private var menuSearch: String = ""
@@ -72,13 +72,6 @@ struct DiningHallDetailView: View {
         .sheet(isPresented: $showingReportSheet) {
             ReportMenuView(hall: currentHall)
                 .environmentObject(appState)
-        }
-        .sheet(item: $selectedItem) { item in
-            FoodRatingView(hall: hall, item: item) { rating in
-                // Call AppState.submitRating which now returns (Bool, String?) to indicate success or blocked reason
-                return appState.submitRating(for: item.id, in: hall.id, rating: rating)
-            }
-            .environmentObject(appState)
         }
         .sheet(isPresented: $showingAuth) {
             AuthView().environmentObject(appState)
@@ -169,12 +162,17 @@ struct DiningHallDetailView: View {
             // Custom search bar with icon and clear button
             searchBar
 
+            let trimmedSearch = menuSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isSearching = trimmedSearch.isEmpty == false
             // Filter items based on the search text (case-insensitive match on name or category)
-            let filtered = currentHall.menuItems.filter { item in
-                menuSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                item.name.range(of: menuSearch, options: .caseInsensitive) != nil ||
-                item.category.range(of: menuSearch, options: .caseInsensitive) != nil
+            let filtered: [MenuItem] = currentHall.menuItems.filter { item in
+                guard isSearching else { return true }
+                if item.name.range(of: trimmedSearch, options: .caseInsensitive) != nil { return true }
+                if item.category.range(of: trimmedSearch, options: .caseInsensitive) != nil { return true }
+                return false
             }
+            let groupedItems = Dictionary(grouping: filtered, by: { $0.category.isEmpty ? "Other" : $0.category })
+            let sortedCategories = groupedItems.keys.sorted()
 
             if filtered.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -185,14 +183,10 @@ struct DiningHallDetailView: View {
                 }
                 .padding(.vertical)
             } else {
-                let grouped = Dictionary(grouping: filtered, by: { $0.category.isEmpty ? "Other" : $0.category })
-                let sortedCategories = grouped.keys.sorted()
-
                 ForEach(sortedCategories, id: \.self) { category in
                     VStack(alignment: .leading, spacing: 8) {
                         // Compute searching/collapse state at the VStack level so it is visible to both the header HStack and the content below.
-                        let isSearching = !menuSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        let hasMatches = ((grouped[category] ?? []).isEmpty == false)
+                        let hasMatches = ((groupedItems[category] ?? []).isEmpty == false)
                         // A category is effectively collapsed when it is in collapsedStations and we're not in a search that has matches for it.
                         let isEffectivelyCollapsed = isCollapsed(category) && !(isSearching && hasMatches)
 
@@ -208,50 +202,34 @@ struct DiningHallDetailView: View {
 
                             Spacer()
 
-                            Text("\(grouped[category]?.count ?? 0) items").font(.caption).foregroundStyle(.secondary)
+                            Text("\(groupedItems[category]?.count ?? 0) items").font(.caption).foregroundStyle(.secondary)
                         }
 
                         if !isEffectivelyCollapsed {
                             LazyVStack(spacing: 8) {
-                                ForEach(grouped[category] ?? [], id: \.id) { item in
-                                    Button {
-                                        if appState.firebaseUser != nil && appState.isVerified {
-                                            selectedItem = item
-                                        } else {
-                                            showingAuth = true
-                                        }
-                                    } label: {
-                                        HStack(alignment: .top) {
-                                            VStack(alignment: .leading, spacing: 6) {
-                                                HStack(spacing: 8) {
-                                                    Text(item.name).fontWeight(.medium)
-                                                }
-                                                HStack(spacing: 8) {
-                                                    RatingStars(rating: item.rating)
-                                                    Text(String(format: "%.1f", item.rating)).font(.subheadline).fontWeight(.medium)
-                                                    Text("(\(item.reviewCount) reviews)").font(.caption).foregroundStyle(.secondary)
-                                                }
-                                                // Labels (allergens/tags) from Nutrislice — show small chips
-                                                if !item.labels.isEmpty {
-                                                    HStack(spacing: 6) {
-                                                        ForEach(item.labels, id: \.self) { label in
-                                                            Text(label)
-                                                                .font(.caption2)
-                                                                .padding(.vertical, 4)
-                                                                .padding(.horizontal, 6)
-                                                                .background(Color.secondary.opacity(0.12))
-                                                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                                                        }
+                                ForEach(groupedItems[category] ?? [], id: \.id) { item in
+                                    HStack(alignment: .top) {
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            HStack(spacing: 8) {
+                                                Text(item.name).fontWeight(.medium)
+                                            }
+                                            if !item.labels.isEmpty {
+                                                HStack(spacing: 6) {
+                                                    ForEach(item.labels, id: \.self) { label in
+                                                        Text(label)
+                                                            .font(.caption2)
+                                                            .padding(.vertical, 4)
+                                                            .padding(.horizontal, 6)
+                                                            .background(Color.secondary.opacity(0.12))
+                                                            .clipShape(RoundedRectangle(cornerRadius: 6))
                                                     }
                                                 }
                                             }
-                                            Spacer()
-                                            Text("Rate").foregroundStyle(.secondary)
                                         }
-                                        .padding(12)
-                                        .card()
+                                        Spacer()
                                     }
-                                    .buttonStyle(.plain)
+                                    .padding(12)
+                                    .card()
                                 }
                             }
                         }
@@ -309,16 +287,9 @@ struct DiningHallDetailView: View {
     // MARK: - Nutrislice loader
     /// Map known dining halls to nutrislice slugs and fetch today's breakfast menu.
     private func nutrisliceParams(for hall: DiningHall) -> (district: String, slug: String)? {
-        // Georgia Tech Nutrislice district
         let district = "techdining"
-        switch hall.id {
-        case "1": // North Ave Dining (sample data id)
-            return (district, "north-ave-dining-hall")
-        case "3": // West Village (sample data id)
-            return (district, "west-village")
-        default:
-            return nil
-        }
+        guard let slug = hall.nutrisliceSlug, !slug.isEmpty else { return nil }
+        return (district, slug)
     }
 
     // MARK: - Time / meal helpers
@@ -349,4 +320,8 @@ struct DiningHallDetailView: View {
         let effectiveMeal = mealKey ?? "breakfast"
         await appState.fetchMenuFromNutrislice(for: currentHall.id, district: params.district, schoolSlug: params.slug, meal: effectiveMeal, debugDump: debugDump)
     }
+
+    // MARK: - Firestore ratings
+
+    private func fetchMenuItemRatings() async {}
 }

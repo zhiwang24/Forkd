@@ -1,13 +1,13 @@
 rules_version = '2'; 
 
 service cloud.firestore {
-	match /databases/{database}/documents {
-    // menu reports 
-    match /menu_reports/{docId} { 
-      allow create: if request.auth != null 
-                    && request.auth.token.email_verified == true 
+    match /databases/{database}/documents {
+    // menu reports
+    match /menu_reports/{docId} {
+      allow create: if request.auth != null
+                    && request.auth.token.email_verified == true
                     && request.auth.token.email.matches('^.*@gatech\\.edu$');
-      allow read: if true; 
+      allow read: if true;
     }
     
     // bug reports
@@ -24,5 +24,22 @@ service cloud.firestore {
       allow read: if request.auth != null && request.auth.uid == uid;
       allow update: if request.auth != null && request.auth.uid == uid;
     }
-	}
+
+    // dining halls collection: allow public reads (app needs to read list of halls)
+    // Writes are limited to verified @gatech.edu users (adjust as needed for production/admins)
+    match /halls/{hallId} {
+      allow read: if true;
+      allow create, update, delete: if request.auth != null
+                                   && request.auth.token.email_verified == true
+                                   && request.auth.token.email.matches('^.*@gatech\\.edu$');
+
+      // Allow reading a subcollection of menuItems publicly as well
+      match /menuItems/{itemId} {
+        allow read: if true;
+        allow create, update, delete: if request.auth != null
+                                       && request.auth.token.email_verified == true
+                                       && request.auth.token.email.matches('^.*@gatech\\.edu$');
+      }
+    }
+    }
 }

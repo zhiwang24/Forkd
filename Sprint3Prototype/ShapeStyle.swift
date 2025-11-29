@@ -35,21 +35,6 @@ struct Badge: View {
     }
 }
 
-struct RatingStars: View {
-    var rating: Double // 0..5
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<5) { i in
-                let filled = i < Int(floor(rating))
-                Image(systemName: filled ? "star.fill" : "star")
-                    .imageScale(.small)
-                    .foregroundStyle(filled ? Color.yellow : Color.gray.opacity(0.4))
-            }
-        }
-        .accessibilityLabel("Rating \(String(format: "%.1f", rating)) out of 5")
-    }
-}
-
 func categoryTint(_ category: String) -> Color {
     switch category {
     case "Pizza": return .red

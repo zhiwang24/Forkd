@@ -15,15 +15,15 @@
 	<key>STORAGE_BUCKET</key>
 	<string>fork-d-f00ec.firebasestorage.app</string>
 	<key>IS_ADS_ENABLED</key>
-	<false></false>
+	<false/>
 	<key>IS_ANALYTICS_ENABLED</key>
-	<false></false>
+	<true/>
 	<key>IS_APPINVITE_ENABLED</key>
-	<true></true>
+	<true/>
 	<key>IS_GCM_ENABLED</key>
-	<true></true>
+	<true/>
 	<key>IS_SIGNIN_ENABLED</key>
-	<true></true>
+	<true/>
 	<key>GOOGLE_APP_ID</key>
 	<string>1:80247733507:ios:6d3c7cde5b2a9c4b3bbd36</string>
 </dict>

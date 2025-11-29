@@ -20,26 +20,50 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             NavigationStack(path: $path) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        header
-                        ForEach(sortedHalls) { hall in
-                            HallRow(hall: hall) {
-                                appState.selectedHall = hall
-                                path.append(hall)
-                            }
+                // Show loading / error / content states for halls
+                Group {
+                    if appState.hallsLoading {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text("Loading dining halls...").foregroundStyle(.secondary)
                         }
-                        footer
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if let err = appState.hallsError {
+                        ScrollView {
+                            VStack(alignment: .center, spacing: 12) {
+                                Text("Failed to load dining halls").font(.headline)
+                                Text(err).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                                Button("Retry") {
+                                    Task { await appState.refreshHallsOnce() }
+                                }
+                                .buttonStyle(.borderedProminent)
+                            }
+                            .padding()
+                        }
+                    } else {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 12) {
+                                header
+                                ForEach(sortedHalls) { hall in
+                                    HallRow(hall: hall) {
+                                        appState.selectedHall = hall
+                                        path.append(hall)
+                                    }
+                                }
+                                footer
+                            }
+                            .padding()
+                        }
+                        .refreshable {
+                            // Pull-to-refresh: refresh menus and request a fresh location update
+                            await appState.fetchMenusOnLaunch()
+                            appState.locationManager.requestLocation()
+                            await appState.refreshHallsOnce()
+                        }
+                        .navigationDestination(for: DiningHall.self) { hall in
+                            DiningHallDetailView(hall: hall, path: $path)
+                        }
                     }
-                    .padding()
-                }
-                .refreshable {
-                    // Pull-to-refresh: refresh menus and request a fresh location update
-                    await appState.fetchMenusOnLaunch()
-                    appState.locationManager.requestLocation()
-                }
-                .navigationDestination(for: DiningHall.self) { hall in
-                    DiningHallDetailView(hall: hall, path: $path)
                 }
             }
 

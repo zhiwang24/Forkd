@@ -151,7 +151,7 @@ struct ReportMenuView: View {
 
 struct ReportMenuView_Previews: PreviewProvider {
     static var previews: some View {
-        ReportMenuView(hall: DiningHall(id: "1", name: "North Ave Dining", waitTime: "5-10 min", status: .open, lastUpdatedAt: Date().addingTimeInterval(-120).timeIntervalSince1970, menuItems: [], verifiedCount: 142))
+        ReportMenuView(hall: DiningHall(id: "north-ave", name: "North Ave Dining", waitTime: "5-10 min", status: .open, lastUpdatedAt: Date().addingTimeInterval(-120).timeIntervalSince1970, menuItems: [], verifiedCount: 142, nutrisliceSlug: "north-ave-dining-hall"))
             .environmentObject(AppState())
     }
 }

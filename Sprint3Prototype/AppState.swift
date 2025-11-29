@@ -58,7 +58,6 @@ final class AppState: ObservableObject {
     /// Post-location intent: when we request permission we may want to continue a pending action automatically once the user grants permission.
     enum PostLocationIntent: Equatable {
         case wait(hallID: String, minutes: Int)
-        case rating(hallID: String, itemID: String, rating: Int)
         case seating(hallID: String, seating: String)
         case waitAndSeating(hallID: String, minutes: Int, seating: String?)
     }
@@ -107,9 +106,15 @@ final class AppState: ObservableObject {
         }
     }
 
-    @Published var halls: [DiningHall] = SampleData.halls
+    // Firestore-backed halls state (replaces previous SampleData fallback)
+    @Published var halls: [DiningHall] = []
+    @Published var hallsLoading: Bool = true
+    @Published var hallsError: String? = nil
+
     @Published var selectedHall: DiningHall? = nil
-    @Published var selectedItem: MenuItem? = nil
+
+    // Firestore listener handle
+    private var hallsListener: ListenerRegistration? = nil
 
     // Firebase auth user
     @Published var firebaseUser: User? = Auth.auth().currentUser
@@ -129,19 +134,13 @@ final class AppState: ObservableObject {
     private var authHandle: AuthStateDidChangeListenerHandle? = nil
 
     init() {
-        let list = halls.map { "\($0.name): \($0.verifiedCount)" }.joined(separator: ", ")
-        print("[AppState] init - loaded halls verified counts -> \(list)")
+        // Start with sample data as a temporary fallback until Firestore loads (this keeps the app usable offline during development).
+        self.halls = SampleData.halls
+        self.hallsLoading = true
+        self.hallsError = nil
 
-        if halls.allSatisfy({ $0.verifiedCount == 0 }) {
-            let proto: [String: Int] = ["1": 142, "2": 89, "3": 5]
-            for idx in halls.indices {
-                if let v = proto[halls[idx].id] {
-                    halls[idx].verifiedCount = v
-                }
-            }
-            let updated = halls.map { "\($0.name): \($0.verifiedCount)" }.joined(separator: ", ")
-            print("[AppState] init - applied prototype verified counts -> \(updated)")
-        }
+        let list = halls.map { "\($0.id): \($0.name) \($0.nutrisliceSlug ?? "(no slug)")" }.joined(separator: ", ")
+        print("[AppState] init - seeded sample halls -> \(list)")
 
         // Subscribe to locationManager.objectWillChange and forward it through AppState's objectWillChange
         locationCancellable = locationManager.objectWillChange.sink { [weak self] _ in
@@ -166,19 +165,89 @@ final class AppState: ObservableObject {
                 print("[AppState] auth state changed - user: \(user?.uid ?? "none"), verified: \(verified)")
             }
         }
+
+        // Start listening for halls in Firestore
+        Task {
+            await startListeningToHallsCollection()
+        }
     }
 
     deinit {
         if let h = authHandle { Auth.auth().removeStateDidChangeListener(h) }
         locationCancellable?.cancel()
         clockCancellable?.cancel()
+        hallsListener?.remove()
+    }
+
+    // MARK: - Firestore halls integration
+    /// Begin listening to the `halls` collection in Firestore and map documents into `DiningHall` instances.
+    func startListeningToHallsCollection() async {
+        // Ensure Firebase is configured
+        if FirebaseApp.app() == nil {
+            FirebaseApp.configure()
+        }
+        let db = Firestore.firestore()
+        // Listen for realtime updates
+        self.hallsLoading = true
+        self.hallsError = nil
+        hallsListener?.remove()
+        hallsListener = db.collection("halls").addSnapshotListener { [weak self] snapshot, error in
+            Task { @MainActor in
+                guard let self = self else { return }
+                if let error = error {
+                    self.hallsLoading = false
+                    self.hallsError = error.localizedDescription
+                    print("[AppState] halls listener error: \(error)")
+                    return
+                }
+                guard let snapshot = snapshot else {
+                    self.hallsLoading = false
+                    self.hallsError = "No data"
+                    return
+                }
+                var newHalls: [DiningHall] = []
+                for doc in snapshot.documents {
+                    let data = doc.data()
+                    let hall = DiningHall(from: data, docID: doc.documentID)
+                    newHalls.append(hall)
+                }
+                // Sort by name to keep deterministic order when not using proximity
+                newHalls.sort { $0.name < $1.name }
+                self.halls = newHalls
+                self.hallsLoading = false
+                self.hallsError = nil
+            }
+        }
+    }
+
+    /// Force refresh halls snapshot by fetching once.
+    func refreshHallsOnce() async {
+        if FirebaseApp.app() == nil { FirebaseApp.configure() }
+        let db = Firestore.firestore()
+        self.hallsLoading = true
+        self.hallsError = nil
+        do {
+            let snapshot = try await db.collection("halls").getDocuments()
+            var newHalls: [DiningHall] = []
+            for doc in snapshot.documents {
+                let hall = DiningHall(from: doc.data(), docID: doc.documentID)
+                newHalls.append(hall)
+            }
+            newHalls.sort { $0.name < $1.name }
+            self.halls = newHalls
+            self.hallsLoading = false
+            self.hallsError = nil
+        } catch {
+            self.hallsLoading = false
+            self.hallsError = error.localizedDescription
+            print("[AppState] refreshHallsOnce error: \(error)")
+        }
     }
 
     // ===== Submission gating & client-side cooldowns =====
     // Persist per-hall+action last-submission timestamps to UserDefaults to prevent rapid repeat submissions.
     private enum SubmissionAction: String {
         case waitTime = "waitTime"
-        case rating = "rating"
         case seating = "seating"
     }
 
@@ -256,41 +325,7 @@ final class AppState: ObservableObject {
     }
     
     func submitRating(for itemID: String, in hallID: String, rating newRating: Int) -> (success: Bool, message: String?) {
-        // Enforce verified-user gating
-        guard isVerified else {
-            let msg = "Please verify your @gatech.edu email before submitting ratings."
-            print("[AppState] submitRating - blocked: user not verified")
-            return (false, msg)
-        }
-
-        // Client-side geofence check: ensure user is within geofence for this hall
-        let geo = checkGeofence(for: hallID)
-        guard geo.allowed else {
-            print("[AppState] submitRating - blocked by geofence: \(geo.message ?? "no location")")
-            return (false, geo.message)
-        }
-
-        // Rate limit per-hall per-action
-        let action: SubmissionAction = .rating
-        let allowed = canSubmit(hallID: hallID, action: action)
-        guard allowed.allowed else {
-            let msg = "Please wait \(Int(allowed.remaining))s before submitting another rating for this dining hall."
-            print("[AppState] submitRating - blocked by cooldown, remaining: \(Int(allowed.remaining))s")
-            return (false, msg)
-        }
-
-        guard let hIdx = halls.firstIndex(where: { $0.id == hallID }) else { return (false, nil) }
-        guard let iIdx = halls[hIdx].menuItems.firstIndex(where: { $0.id == itemID }) else { return (false, nil) }
-        var item = halls[hIdx].menuItems[iIdx]
-        let total = item.rating * Double(item.reviewCount) + Double(newRating)
-        item.reviewCount += 1
-        item.rating = total / Double(item.reviewCount)
-        halls[hIdx].menuItems[iIdx] = item
-        halls[hIdx].verifiedCount += 1
-        // record submission time
-        recordSubmission(hallID: hallID, action: action)
-        print("[AppState] submitRating - \(halls[hIdx].name) verifiedCount -> \(halls[hIdx].verifiedCount)")
-        return (true, nil)
+        return (false, "Ratings are no longer supported.")
     }
     
     /// Submit seating availability for a given hall (e.g. "Plenty", "Some", "Few", "Packed").
@@ -408,11 +443,8 @@ final class AppState: ObservableObject {
     /// Map known local hall IDs to Nutrislice district and school slug. Update as needed.
     private func nutrisliceParamsForHallID(_ hallID: String) -> (district: String, slug: String)? {
         let district = "techdining"
-        switch hallID {
-        case "1": return (district, "north-ave-dining-hall")
-        case "3": return (district, "west-village")
-        default: return nil
-        }
+        guard let hall = halls.first(where: { $0.id == hallID }), let slug = hall.nutrisliceSlug, !slug.isEmpty else { return nil }
+        return (district, slug)
     }
 
     /// Compute meal key using the same schedule as the UI. Returns nil if outside meal windows.
@@ -457,7 +489,7 @@ final class AppState: ObservableObject {
             let doDebug = debugDump || isDebugBuild
             let items = try await NutrisliceService.shared.fetchMenu(district: district, school: schoolSlug, meal: meal, date: date, debugDump: doDebug)
             let mapped: [MenuItem] = items.map { nutri in
-                MenuItem(id: nutri.id, name: nutri.name, category: nutri.category, rating: 0.0, reviewCount: 0, labels: nutri.labels)
+                MenuItem(id: nutri.id, name: nutri.name, category: nutri.category, labels: nutri.labels)
             }
             halls[idx].menuItems = mapped
             print("[AppState] fetchMenuFromNutrislice -> updated \(halls[idx].name) with \(mapped.count) items")

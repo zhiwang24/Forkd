@@ -55,12 +55,6 @@ struct FoodRatingView: View, Identifiable {
         VStack(alignment: .leading, spacing: 8) {
             Text(item.name).font(.title3).bold()
             Badge(text: item.category, tint: categoryTint(item.category))
-            HStack(spacing: 8) {
-                Text("Current rating:").font(.caption).foregroundStyle(.secondary)
-                RatingStars(rating: item.rating)
-                Text(String(format: "%.1f", item.rating)).font(.subheadline).bold()
-                Text("(\(item.reviewCount) reviews)").font(.caption).foregroundStyle(.secondary)
-            }
         }.card()
     }
 
