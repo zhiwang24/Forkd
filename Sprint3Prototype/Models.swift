@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import FirebaseFirestore
 
 struct MenuItem: Identifiable, Hashable, Codable {
     var id: String
@@ -101,6 +102,8 @@ extension DiningHall {
             self.lastUpdatedAt = ts
         } else if let tsn = dict["lastUpdatedAt"] as? NSNumber {
             self.lastUpdatedAt = tsn.doubleValue
+        } else if let timestamp = dict["lastUpdatedAt"] as? Timestamp {
+            self.lastUpdatedAt = timestamp.dateValue().timeIntervalSince1970
         } else if let tsDict = dict["lastUpdatedAt"] as? [String: Any], let seconds = tsDict["_seconds"] as? NSNumber {
             // Some Firestore debugger outputs timestamp objects as dictionaries like { "_seconds": 12345, "_nanoseconds": 0 }
             self.lastUpdatedAt = seconds.doubleValue

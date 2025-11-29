@@ -134,14 +134,6 @@ final class AppState: ObservableObject {
     private var authHandle: AuthStateDidChangeListenerHandle? = nil
 
     init() {
-        // Start with sample data as a temporary fallback until Firestore loads (this keeps the app usable offline during development).
-        self.halls = SampleData.halls
-        self.hallsLoading = true
-        self.hallsError = nil
-
-        let list = halls.map { "\($0.id): \($0.name) \($0.nutrisliceSlug ?? "(no slug)")" }.joined(separator: ", ")
-        print("[AppState] init - seeded sample halls -> \(list)")
-
         // Subscribe to locationManager.objectWillChange and forward it through AppState's objectWillChange
         locationCancellable = locationManager.objectWillChange.sink { [weak self] _ in
             Task { @MainActor in
@@ -317,6 +309,7 @@ final class AppState: ObservableObject {
         let newCount = currentCount + 1
         hallVotes[minutes] = newCount
         pendingWaitVotes[hallID] = hallVotes
+        AnalyticsService.shared.logWaitVoteQueued(hallID: hallID, minutes: minutes, votesRemaining: max(0, waitSubmissionThreshold - newCount))
         print("[AppState] updateWaitTime - queued vote for \(hallID) @ \(minutes) min (\(newCount)/\(waitSubmissionThreshold))")
 
         if newCount < waitSubmissionThreshold {
@@ -332,6 +325,7 @@ final class AppState: ObservableObject {
         halls[idx].waitTime = newText
         halls[idx].lastUpdatedAt = Date().timeIntervalSince1970
         halls[idx].verifiedCount += waitSubmissionThreshold
+        AnalyticsService.shared.logWaitTimeCommitted(hallID: hallID, minutes: minutes, wasAggregated: true)
 
         Task { await persistWaitTimeToFirestore(hallID: hallID, minutes: minutes) }
 

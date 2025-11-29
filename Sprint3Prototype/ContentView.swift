@@ -224,16 +224,18 @@ struct HallRow: View {
                             Text("\(hall.menuItems.count) items available").font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.seal.fill").imageScale(.small).foregroundStyle(.green)
-                        Text("Verified by \(hall.verifiedCount) student\(hall.verifiedCount == 1 ? "" : "s")")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Text("• Updated \(hall.lastUpdatedText(now: appState.now))").font(.caption).foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .imageScale(.small)
+                            .foregroundStyle(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Verified by \(hall.verifiedCount) student\(hall.verifiedCount == 1 ? "" : "s")")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            
+                        }
                     }
                     .layoutPriority(1)
                 }
@@ -320,25 +322,19 @@ struct HallRow: View {
         let (text, color): (String, Color) = {
             switch hall.status {
             case .open: return ("Open", .green)
-            case .closed: return ("Closed", .red)
-            case .busy: return ("Open", .orange) // busy is represented by seating indicator
+            case .busy: return ("Open", .orange)
+            case .closed: return (hall.id == "brittain" ? "Temporarily Closed" : "Closed", .red)
             case .unknown: return ("Temporarily Closed", .red)
             }
         }()
-
-        // Build an optional hours note depending on status and available model fields
         let hoursNote: String? = {
-            // Prefer showing closing time when open, opening time when closed.
             if hall.status == .open {
                 if let closes = hall.closesAt, !closes.isEmpty { return "‧ Closes \(closes)" }
             } else if hall.status == .closed {
                 if let opens = hall.opensAt, !opens.isEmpty { return "‧ Opens \(opens)" }
-            } else if hall.status == .unknown {
-                return " "
             } else {
-                // busy/unknown: show either closes or opens if available
                 if let closes = hall.closesAt, !closes.isEmpty { return "‧ Closes \(closes)" }
-                if let opens = hall.opensAt, !opens.isEmpty { return "‧ Opens \(opens)" }
+                else if let opens = hall.opensAt, !opens.isEmpty { return "‧ Opens \(opens)" }
             }
             return nil
         }()
