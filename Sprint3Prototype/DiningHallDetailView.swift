@@ -206,30 +206,33 @@ struct DiningHallDetailView: View {
                         }
 
                         if !isEffectivelyCollapsed {
-                            LazyVStack(spacing: 8) {
-                                ForEach(groupedItems[category] ?? [], id: \.id) { item in
-                                    HStack(alignment: .top) {
-                                        VStack(alignment: .leading, spacing: 6) {
-                                            HStack(spacing: 8) {
-                                                Text(item.name).fontWeight(.medium)
-                                            }
+                            LazyVStack(spacing: 6) {
+                                ForEach(groupedItems[category] ?? [], id: \ .id) { item in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(item.name)
+                                                .font(.subheadline)
+                                                .fontWeight(.semibold)
+                                                .foregroundStyle(.primary)
                                             if !item.labels.isEmpty {
-                                                HStack(spacing: 6) {
-                                                    ForEach(item.labels, id: \.self) { label in
+                                                HStack(spacing: 4) {
+                                                    ForEach(item.labels, id: \ .self) { label in
                                                         Text(label)
                                                             .font(.caption2)
-                                                            .padding(.vertical, 4)
-                                                            .padding(.horizontal, 6)
-                                                            .background(Color.secondary.opacity(0.12))
-                                                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                                                            .padding(.vertical, 2)
+                                                            .padding(.horizontal, 4)
+                                                            .background(Color.secondary.opacity(0.1))
+                                                            .clipShape(RoundedRectangle(cornerRadius: 4))
                                                     }
                                                 }
                                             }
                                         }
                                         Spacer()
                                     }
-                                    .padding(12)
-                                    .card()
+                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 10)
+                                    .background(Color.card)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 }
                             }
                         }

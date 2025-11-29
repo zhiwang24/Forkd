@@ -253,6 +253,8 @@ final class AppState: ObservableObject {
 
     // Default cooldown window in seconds (5 minutes). Tweakable for experiments.
     private let submissionCooldownSeconds: TimeInterval = 5 * 60
+    private let waitSubmissionThreshold = 5
+    private var pendingWaitVotes: [String: [Int: Int]] = [:]
 
     private func lastSubmissionKey(hallID: String, action: SubmissionAction) -> String {
         return "lastSubmission:\(hallID):\(action.rawValue)"
@@ -308,15 +310,51 @@ final class AppState: ObservableObject {
             return (false, msg)
         }
 
-        guard let idx = halls.firstIndex(where: { $0.id == hallID }) else { return (false, nil) }
+        recordSubmission(hallID: hallID, action: action)
+
+        var hallVotes = pendingWaitVotes[hallID] ?? [:]
+        let currentCount = hallVotes[minutes] ?? 0
+        let newCount = currentCount + 1
+        hallVotes[minutes] = newCount
+        pendingWaitVotes[hallID] = hallVotes
+        print("[AppState] updateWaitTime - queued vote for \(hallID) @ \(minutes) min (\(newCount)/\(waitSubmissionThreshold))")
+
+        if newCount < waitSubmissionThreshold {
+            return (true, "Thanks! We'll update once enough students agree.")
+        }
+
+        // Threshold reached: commit the update and reset the counter for this minutes bucket
+        hallVotes[minutes] = 0
+        pendingWaitVotes[hallID] = hallVotes
+
+        guard let idx = halls.firstIndex(where: { $0.id == hallID }) else { return (false, "Hall not found") }
         let newText = minutes < 2 ? "1-2 min" : "\(max(1, minutes-1))-\(minutes+1) min"
         halls[idx].waitTime = newText
         halls[idx].lastUpdatedAt = Date().timeIntervalSince1970
-        halls[idx].verifiedCount += 1
-        // record submission time
-        recordSubmission(hallID: hallID, action: action)
-        print("[AppState] updateWaitTime - \(halls[idx].name) verifiedCount -> \(halls[idx].verifiedCount)")
+        halls[idx].verifiedCount += waitSubmissionThreshold
+
+        Task { await persistWaitTimeToFirestore(hallID: hallID, minutes: minutes) }
+
+        print("[AppState] updateWaitTime - applied aggregated update for \(halls[idx].name) -> \(newText)")
         return (true, nil)
+    }
+
+    private func persistWaitTimeToFirestore(hallID: String, minutes: Int) async {
+        guard FirebaseApp.app() != nil || { FirebaseApp.configure(); return true }() else { return }
+        let db = Firestore.firestore()
+        let newText = minutes < 2 ? "1-2 min" : "\(max(1, minutes-1))-\(minutes+1) min"
+        let data: [String: Any] = [
+            "currentWaitMinutes": minutes,
+            "waitTime": newText,
+            "lastUpdatedAt": Date().timeIntervalSince1970,
+            "verifiedCount": halls.first(where: { $0.id == hallID })?.verifiedCount ?? 0
+        ]
+        do {
+            try await db.collection("halls").document(hallID).setData(data, merge: true)
+            print("[AppState] persistWaitTimeToFirestore - updated \(hallID)")
+        } catch {
+            print("[AppState] persistWaitTimeToFirestore error: \(error)")
+        }
     }
 
     func updateStatus(for hallID: String, to newStatus: HallStatus) {
