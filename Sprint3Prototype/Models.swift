@@ -22,6 +22,7 @@ struct DiningHall: Identifiable, Hashable, Codable {
     var name: String
     var waitTime: String // e.g. "5-10 min"
     var status: HallStatus
+    var currentWaitMinutes: Int? = nil
     // Use a timestamp for the canonical last-updated moment. Views should render a human-friendly string from this.
     var lastUpdatedAt: TimeInterval? = nil
     var menuItems: [MenuItem]
@@ -79,12 +80,17 @@ extension DiningHall {
         if let lon = dict["lon"] as? Double { self.lon = lon } else if let lon = dict["lon"] as? NSNumber { self.lon = lon.doubleValue } else { self.lon = nil }
 
         // waitTime: prefer a numeric minutes field but fall back to the legacy waitTime string
+        var derivedMinutes: Int? = nil
         if let minutes = dict["currentWaitMinutes"] as? Int {
-            if minutes < 2 { self.waitTime = "1-2 min" } else { self.waitTime = "\(max(1, minutes-1))-\(minutes+1) min" }
+            derivedMinutes = minutes
         } else if let minutes = dict["currentWaitMinutes"] as? NSNumber {
-            let m = minutes.intValue
-            if m < 2 { self.waitTime = "1-2 min" } else { self.waitTime = "\(max(1, m-1))-\(m+1) min" }
+            derivedMinutes = minutes.intValue
+        }
+        if let minutes = derivedMinutes {
+            self.currentWaitMinutes = minutes
+            if minutes < 2 { self.waitTime = "1-2 min" } else { self.waitTime = "\(max(1, minutes-1))-\(minutes+1) min" }
         } else {
+            self.currentWaitMinutes = nil
             self.waitTime = dict["waitTime"] as? String ?? "Unknown"
         }
 
@@ -145,6 +151,7 @@ extension DiningHall {
     mutating func enforceClosedDisplayStateIfNeeded() {
         if status.isClosedState {
             waitTime = "Closed"
+            currentWaitMinutes = nil
             seating = "No reports"
         }
     }
@@ -152,4 +159,19 @@ extension DiningHall {
 
 extension HallStatus {
     var isClosedState: Bool { self == .closed || self == .unknown }
+}
+
+extension DiningHall {
+    func derivedMinutesFromWaitTime() -> Int? {
+        if let current = currentWaitMinutes { return current }
+        let trimmed = waitTime.lowercased()
+        guard trimmed != "closed", trimmed != "unknown", !trimmed.isEmpty else { return nil }
+        // Expected format: "x-y min" or "x-y mins"
+        let digits = trimmed.split(separator: " ").first ?? Substring(trimmed)
+        let parts = digits.split(separator: "-")
+        guard parts.count == 2,
+              let low = Int(parts[0].filter({ $0.isNumber })),
+              let high = Int(parts[1].filter({ $0.isNumber })) else { return nil }
+        return (low + high) / 2
+    }
 }

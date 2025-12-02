@@ -417,45 +417,57 @@ final class AppState: ObservableObject {
             let msg = "Please wait \(Int(allowed.remaining))s before submitting another update for this dining hall."
             return (false, msg)
         }
-
+        
         recordSubmission(hallID: hallID, action: action)
 
+        guard let idx = halls.firstIndex(where: { $0.id == hallID }) else {
+            return (false, "Hall not found")
+        }
         var hallVotes = pendingWaitVotes[hallID] ?? [:]
         let currentCount = hallVotes[minutes] ?? 0
+        let hall = halls[idx]
+        let displayed = hall.currentWaitMinutes ?? hall.derivedMinutesFromWaitTime()
+        let isWithinDisplayTolerance = displayed.map { abs($0 - minutes) <= 2 } ?? false
+        let thresholdNeeded = !isWithinDisplayTolerance
         let newCount = currentCount + 1
         hallVotes[minutes] = newCount
         pendingWaitVotes[hallID] = hallVotes
         AnalyticsService.shared.logWaitVoteQueued(hallID: hallID, minutes: minutes, votesRemaining: max(0, waitSubmissionThreshold - newCount))
 
-        if newCount < waitSubmissionThreshold {
+        if thresholdNeeded && newCount < waitSubmissionThreshold {
             return (true, "Thanks! We'll update once enough students agree.")
         }
 
-        // Threshold reached: commit the update and reset the counter for this minutes bucket
+        // Threshold reached or tolerance satisfied: commit the update and reset counters for this bucket
         hallVotes[minutes] = 0
         pendingWaitVotes[hallID] = hallVotes
 
-        guard let idx = halls.firstIndex(where: { $0.id == hallID }) else { return (false, "Hall not found") }
-        let newText = minutes < 2 ? "1-2 min" : "\(max(1, minutes-1))-\(minutes+1) min"
-        halls[idx].waitTime = newText
-        halls[idx].lastUpdatedAt = Date().timeIntervalSince1970
-        halls[idx].verifiedCount += waitSubmissionThreshold
-        AnalyticsService.shared.logWaitTimeCommitted(hallID: hallID, minutes: minutes, wasAggregated: true)
-
-        Task { await persistWaitTimeToFirestore(hallID: hallID, minutes: minutes) }
+        commitWaitTimeUpdate(for: hallID, hallIndex: idx, minutes: minutes, verifiedIncrement: thresholdNeeded ? waitSubmissionThreshold : 1)
 
         return (true, nil)
+    }
+
+    private func commitWaitTimeUpdate(for hallID: String, hallIndex idx: Int, minutes: Int, verifiedIncrement: Int) {
+        let newText = minutes < 2 ? "1-2 min" : "\(max(1, minutes-1))-\(minutes+1) min"
+        halls[idx].waitTime = newText
+        halls[idx].currentWaitMinutes = minutes
+        halls[idx].lastUpdatedAt = Date().timeIntervalSince1970
+        halls[idx].verifiedCount += verifiedIncrement
+        AnalyticsService.shared.logWaitTimeCommitted(hallID: hallID, minutes: minutes, wasAggregated: verifiedIncrement > 1)
+
+        Task { await persistWaitTimeToFirestore(hallID: hallID, minutes: minutes) }
     }
 
     private func persistWaitTimeToFirestore(hallID: String, minutes: Int) async {
         guard FirebaseApp.app() != nil || { FirebaseApp.configure(); return true }() else { return }
         let db = Firestore.firestore()
         let newText = minutes < 2 ? "1-2 min" : "\(max(1, minutes-1))-\(minutes+1) min"
+        let currentVerified = halls.first(where: { $0.id == hallID })?.verifiedCount ?? 0
         let data: [String: Any] = [
             "currentWaitMinutes": minutes,
             "waitTime": newText,
             "lastUpdatedAt": Date().timeIntervalSince1970,
-            "verifiedCount": halls.first(where: { $0.id == hallID })?.verifiedCount ?? 0
+            "verifiedCount": currentVerified
         ]
         do {
             try await db.collection("halls").document(hallID).setData(data, merge: true)
