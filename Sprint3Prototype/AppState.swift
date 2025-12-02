@@ -12,6 +12,69 @@ import FirebaseFirestore
 import CoreLocation
 import Combine
 
+// Recommendation document synchronized from the external recommender API.
+struct Recommendation: Codable {
+    struct Pick: Codable {
+        let hallId: String
+        let name: String
+        let reason: String
+        let sampleItems: [String]
+        let score: Double?
+    }
+    struct RecWeather: Codable {
+        let tempC: Double?
+        let precipitation: Double?
+        let condition: String?
+    }
+    let updatedAt: TimeInterval?
+    let weather: RecWeather?
+    let meal: String?
+    let pick: Pick?
+}
+
+extension Recommendation {
+    private static func string(from any: Any?) -> String? {
+        if let s = any as? String { return s }
+        if let n = any as? NSNumber { return n.stringValue }
+        return nil
+    }
+
+    static func from(data: [String: Any]) -> Recommendation? {
+        let updatedAt: TimeInterval? = {
+            if let ts = data["updatedAt"] as? TimeInterval { return ts }
+            if let num = data["updatedAt"] as? NSNumber { return num.doubleValue }
+            if let ts = data["updatedAt"] as? Timestamp { return ts.dateValue().timeIntervalSince1970 }
+            return nil
+        }()
+        let weather: RecWeather? = {
+            guard let w = data["weather"] as? [String: Any] else { return nil }
+            let temp = (w["tempC"] as? NSNumber)?.doubleValue
+            let precip = (w["precipitation"] as? NSNumber)?.doubleValue
+            let cond = string(from: w["condition"])
+            if temp == nil && precip == nil && cond == nil { return nil }
+            return RecWeather(tempC: temp, precipitation: precip, condition: cond)
+        }()
+        let meal = string(from: data["meal"])
+        let pick: Pick? = {
+            guard let p = data["pick"] as? [String: Any] else { return nil }
+            let hallId = string(from: p["hallId"]) ?? string(from: p["id"])
+            let name = string(from: p["name"]) ?? string(from: p["hallName"])
+            guard let hid = hallId, let nm = name else { return nil }
+            let reason = string(from: p["reason"]) ?? ""
+            let samples: [String] = {
+                if let arr = p["sampleItems"] as? [String] { return arr }
+                if let arr = p["sampleItems"] as? [Any] {
+                    return arr.compactMap { string(from: $0) }
+                }
+                return []
+            }()
+            let score = (p["score"] as? NSNumber)?.doubleValue
+            return Pick(hallId: hid, name: nm, reason: reason, sampleItems: samples, score: score)
+        }()
+        return Recommendation(updatedAt: updatedAt, weather: weather, meal: meal, pick: pick)
+    }
+}
+
 @MainActor
 final class AppState: ObservableObject {
     // Location manager for client-side geofence checks
@@ -113,8 +176,12 @@ final class AppState: ObservableObject {
 
     @Published var selectedHall: DiningHall? = nil
 
+    // Recommendation document (written by the external recommender service)
+    @Published var recommendation: Recommendation? = nil
+
     // Firestore listener handle
     private var hallsListener: ListenerRegistration? = nil
+    private var recListener: ListenerRegistration? = nil
 
     // Firebase auth user
     @Published var firebaseUser: User? = Auth.auth().currentUser
@@ -162,6 +229,11 @@ final class AppState: ObservableObject {
         Task {
             await startListeningToHallsCollection()
         }
+        // Listen for recommendation updates written by the recommender API
+        Task {
+            await startListeningToRecommendation()
+            await fetchRecommendationOnce()
+        }
     }
 
     deinit {
@@ -169,6 +241,7 @@ final class AppState: ObservableObject {
         locationCancellable?.cancel()
         clockCancellable?.cancel()
         hallsListener?.remove()
+        recListener?.remove()
     }
 
     // MARK: - Firestore halls integration
@@ -209,6 +282,52 @@ final class AppState: ObservableObject {
                 self.hallsLoading = false
                 self.hallsError = nil
             }
+        }
+    }
+
+    // MARK: - Recommendation listener
+    /// Listen to the recommendation document written by the external recommender service.
+    func startListeningToRecommendation() async {
+        if FirebaseApp.app() == nil { FirebaseApp.configure() }
+        recListener?.remove()
+        recListener = Firestore.firestore()
+            .collection("recommendations")
+            .document("global")
+            .addSnapshotListener { [weak self] snapshot, error in
+                Task { @MainActor in
+                    if let error = error {
+                        print("[AppState] recommendation listener error: \(error)")
+                        return
+                    }
+                    guard let data = snapshot?.data() else {
+                        print("[AppState] recommendation listener: no data in snapshot")
+                        return
+                    }
+                    print("[AppState] recommendation listener data: \(data)")
+                    let rec = Recommendation.from(data: data)
+                    self?.recommendation = rec
+                    if let r = rec, let pick = r.pick {
+                        print("[AppState] recommendation updated -> \(pick.name) (hallId: \(pick.hallId)) reason: \(pick.reason)")
+                    } else {
+                        print("[AppState] recommendation decoded but no pick")
+                    }
+                }
+            }
+    }
+
+    /// One-off fetch to prime recommendation state on launch.
+    func fetchRecommendationOnce() async {
+        if FirebaseApp.app() == nil { FirebaseApp.configure() }
+        let db = Firestore.firestore()
+        do {
+            let snap = try await db.collection("recommendations").document("global").getDocument()
+            if let data = snap.data() {
+                print("[AppState] recommendation fetchOnce data: \(data)")
+                let rec = Recommendation.from(data: data)
+                Task { @MainActor in self.recommendation = rec }
+            }
+        } catch {
+            print("[AppState] fetchRecommendationOnce error: \(error)")
         }
     }
 
@@ -501,6 +620,13 @@ final class AppState: ObservableObject {
             // small polite pause between requests
             try? await Task.sleep(nanoseconds: 80_000_000)
         }
+    }
+
+    func fetchRecommendationFromAPI() async {
+        guard let url = URL(string: "https://forkd-rec.vercel.app/api/recommend") else { return }
+        var req = URLRequest(url: url)
+        req.addValue("apple", forHTTPHeaderField: "x-api-key")
+        do { _ = try await URLSession.shared.data(for: req) } catch { print("[AppState] recommend API call failed: \(error)") }
     }
 
     // MARK: - Nutrislice integration

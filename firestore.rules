@@ -9,6 +9,11 @@ service cloud.firestore {
                     && request.auth.token.email.matches('^.*@gatech\\.edu$');
       allow read: if true;
     }
+
+    // recommendation doc written by the recommender API
+    match /recommendations/global {
+      allow read: if true;
+    }
     
     // bug reports
     match /bug_reports/{docId} {

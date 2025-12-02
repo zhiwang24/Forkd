@@ -16,11 +16,11 @@ struct ContentView: View {
     @State private var showingBugReport = false
     @State private var showingAuth = false
     @State private var showingProfile = false
+    @State private var recExpanded = false
 
     var body: some View {
         ZStack {
             NavigationStack(path: $path) {
-                // Show loading / error / content states for halls
                 Group {
                     if appState.hallsLoading {
                         VStack(spacing: 12) {
@@ -44,6 +44,7 @@ struct ContentView: View {
                         ScrollView {
                             VStack(alignment: .leading, spacing: 12) {
                                 header
+                                recommendationCard
                                 ForEach(sortedHalls) { hall in
                                     HallRow(hall: hall) {
                                         appState.selectedHall = hall
@@ -55,7 +56,6 @@ struct ContentView: View {
                             .padding()
                         }
                         .refreshable {
-                            // Pull-to-refresh: refresh menus and request a fresh location update
                             await appState.fetchMenusOnLaunch()
                             appState.locationManager.requestLocation()
                             await appState.refreshHallsOnce()
@@ -81,15 +81,15 @@ struct ContentView: View {
                             .padding(14)
                     }
                     .background(Color(UIColor.secondarySystemBackground).opacity(0.95))
-                     .clipShape(Circle())
-                     .overlay(Circle().stroke(Color.accentColor.opacity(0.12), lineWidth: 1))
-                     .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.12), radius: 6, x: 0, y: 4)
-                     .padding(.trailing, 16)
-                     .padding(.bottom, 20)
-                     .buttonStyle(.plain)
-                 }
-             }
-         }
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(Color.accentColor.opacity(0.12), lineWidth: 1))
+                    .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.12), radius: 6, x: 0, y: 4)
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 20)
+                    .buttonStyle(.plain)
+                }
+            }
+        }
         .sheet(isPresented: $showingBugReport) {
             BugReportView()
                 .environmentObject(appState)
@@ -105,9 +105,9 @@ struct ContentView: View {
         .onAppear {
             let list = appState.halls.map { "\($0.name): \($0.verifiedCount)" }.joined(separator: ", ")
             print("[ContentView] onAppear - halls verified counts -> \(list)")
-            // Fetch Nutrislice menus for known halls on app launch so menus are up-to-date immediately.
             Task {
                 await appState.fetchMenusOnLaunch()
+                await appState.fetchRecommendationFromAPI()
             }
         }
     }
@@ -138,9 +138,7 @@ struct ContentView: View {
 
                 Spacer()
 
-                Button {
-                    theme.toggle()
-                } label: {
+                Button { theme.toggle() } label: {
                     Image(systemName: Theme(rawValue: UserDefaults.standard.string(forKey: "app.theme") ?? Theme.system.rawValue)?.iconName ?? "moon.fill")
                         .imageScale(.small)
                         .padding(8)
@@ -158,6 +156,111 @@ struct ContentView: View {
         }
     }
 
+    private var recommendationCard: some View {
+        Group {
+            if let rec = appState.recommendation, let pick = rec.pick {
+                Button {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                        recExpanded.toggle()
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(alignment: .center) {
+                            Label("Recommended right now", systemImage: "sparkles")
+                                .font(.subheadline).fontWeight(.semibold)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            HStack(spacing: 6) {
+                                Image(systemName: iconForWeather(rec.weather?.condition))
+                                    .imageScale(.small)
+                                Text(formatTemp(rec.weather?.tempC))
+                                    .font(.caption).fontWeight(.semibold)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.2))
+                            .clipShape(Capsule())
+                        }
+
+                        HStack(alignment: .center, spacing: 10) {
+                            Text(pick.name)
+                                .font(.title3).bold()
+                                .foregroundStyle(Color.primary)
+                            Spacer(minLength: 8)
+                            if let hallWait = appState.halls.first(where: { $0.id == pick.hallId })?.waitTime {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "clock")
+                                        .imageScale(.small)
+                                    Text(hallWait)
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.accentColor.opacity(0.12))
+                                .clipShape(Capsule())
+                            }
+                        }
+
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "sparkles")
+                                .foregroundStyle(Color.secondary)
+                                .imageScale(.medium)
+                            Text(pick.reason)
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                                .lineLimit(recExpanded ? nil : 2)
+                        }
+                        .padding(12)
+                        .background(.thinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                        if recExpanded, !pick.sampleItems.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "fork.knife")
+                                        .foregroundStyle(.secondary)
+                                    Text("Try:")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(pick.sampleItems, id: \.self) { text in
+                                            Text(text)
+                                                .font(.caption2)
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 6)
+                                                .background(Color(UIColor.secondarySystemBackground))
+                                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                        }
+                                    }
+                                    .padding(.vertical, 2)
+                                }
+                            }
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
+                    }
+                    .padding(14)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.accentColor.opacity(0.18), Color(UIColor.secondarySystemBackground)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.accentColor.opacity(0.25), lineWidth: 1)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.25 : 0.08), radius: 8, x: 0, y: 5)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -172,8 +275,6 @@ struct ContentView: View {
         .padding(.top, 8)
     }
 
-    // Halls sorted by proximity to the user's last known location.
-    // Halls with a calculable distance appear first (closest -> farthest). Halls without location/distance are ordered by name and appear last.
     private var sortedHalls: [DiningHall] {
         let mgr = appState.locationManager
         return appState.halls.sorted { a, b in
@@ -190,6 +291,20 @@ struct ContentView: View {
             case (_?, nil): return true
             }
         }
+    }
+
+    private func iconForWeather(_ condition: String?) -> String {
+        let c = (condition ?? "").lowercased()
+        if c.contains("rain") { return "cloud.rain.fill" }
+        if c.contains("snow") { return "cloud.snow.fill" }
+        if c.contains("fog") { return "cloud.fog.fill" }
+        if c.contains("clear") { return "sun.max.fill" }
+        return "cloud.fill"
+    }
+
+    private func formatTemp(_ tempC: Double?) -> String {
+        guard let t = tempC else { return "--" }
+        return String(format: "%.0f°F", t * 9/5 + 32)
     }
 }
 
@@ -241,21 +356,18 @@ struct HallRow: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing) {
-                    // Actionable distance UI: show formatted distance if available, otherwise provide request/open-settings actions.
                     if let lat = hall.lat, let lon = hall.lon {
                         if let meters = appState.locationManager.distanceTo(lat: lat, lon: lon) {
-                            // show distance
                             HStack(spacing: 6) {
                                 Image(systemName: "location.fill")
                                     .imageScale(.small)
                                     .foregroundStyle(.secondary)
                                 Text(appState.formattedDistance(fromMeters: meters))
-                                     .font(.caption)
-                                     .foregroundStyle(.secondary)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
                             .padding(.top, 4)
                         } else {
-                            // No location value yet — display an action based on authorization
                             switch appState.locationManager.authorizationStatus {
                             case .notDetermined:
                                 Button(action: { appState.locationManager.requestPermission() }) {
@@ -317,16 +429,17 @@ struct HallRow: View {
         }
     }
 
-    // Compact open/closed label to show near the updated/hours text (Google Maps style)
     private var openClosedLabel: some View {
         let (text, color): (String, Color) = {
             switch hall.status {
             case .open: return ("Open", .green)
+            case .closed: return ("Closed", .red)
             case .busy: return ("Open", .orange)
             case .closed: return (hall.id == "brittain" ? "Temporarily Closed" : "Closed", .red)
             case .unknown: return ("Temporarily Closed", .red)
             }
         }()
+
         let hoursNote: String? = {
             if hall.status == .open {
                 if let closes = hall.closesAt, !closes.isEmpty { return "‧ Closes \(closes)" }
