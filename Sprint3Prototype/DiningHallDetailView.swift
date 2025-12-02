@@ -55,9 +55,7 @@ struct DiningHallDetailView: View {
         }
         .navigationTitle(hall.name)
         .navigationBarTitleDisplayMode(.inline)
-        .task {
-            await loadNutrisliceMenuIfAvailable()
-        }
+        .task { await loadNutrisliceMenuIfAvailable() }
         .onAppear { initializeCollapsedIfNeeded() }
         .onChange(of: currentHall.menuItems.count) { _, _ in initializeCollapsedIfNeeded() }
         .onReceive(appState.$isVerified) { verified in
@@ -93,11 +91,8 @@ struct DiningHallDetailView: View {
             }
             Spacer()
         }
-        // DEBUG: Long-press the header to trigger a debug fetch that prints + writes the raw Nutrislice JSON for inspection.
         .onLongPressGesture {
-            Task {
-                await loadNutrisliceMenuIfAvailable(debugDump: true)
-            }
+            Task { await loadNutrisliceMenuIfAvailable(force: true) }
         }
     }
 
@@ -314,14 +309,11 @@ struct DiningHallDetailView: View {
         return nil
     }
 
-    private func loadNutrisliceMenuIfAvailable(debugDump: Bool = false) async {
+    private func loadNutrisliceMenuIfAvailable(force: Bool = false) async {
         guard let params = nutrisliceParams(for: currentHall) else { return }
-        // If debugDump is requested, allow fetching even outside the strict meal windows so developers
-        // can inspect raw JSON at any time. When no meal window applies, pick a sensible default (breakfast).
-        let mealKey = currentMealKey()
-        if mealKey == nil && !debugDump { return } // in normal mode, do not fetch outside meal windows
-        let effectiveMeal = mealKey ?? "breakfast"
-        await appState.fetchMenuFromNutrislice(for: currentHall.id, district: params.district, schoolSlug: params.slug, meal: effectiveMeal, debugDump: debugDump)
+        if !force, currentHall.menuItems.isEmpty == false { return }
+        let mealKey = currentMealKey() ?? "breakfast"
+        await appState.fetchMenuFromNutrislice(for: currentHall.id, district: params.district, schoolSlug: params.slug, meal: mealKey)
     }
 
     // MARK: - Firestore ratings

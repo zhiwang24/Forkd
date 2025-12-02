@@ -60,6 +60,10 @@ struct ContentView: View {
                             appState.locationManager.requestLocation()
                             await appState.refreshHallsOnce()
                         }
+                        .task(id: appState.halls.map { $0.id }) {
+                            guard !appState.halls.isEmpty else { return }
+                            await appState.fetchMenusOnLaunch()
+                        }
                         .navigationDestination(for: DiningHall.self) { hall in
                             DiningHallDetailView(hall: hall, path: $path)
                         }
@@ -105,10 +109,7 @@ struct ContentView: View {
         .onAppear {
             let list = appState.halls.map { "\($0.name): \($0.verifiedCount)" }.joined(separator: ", ")
             print("[ContentView] onAppear - halls verified counts -> \(list)")
-            Task {
-                await appState.fetchMenusOnLaunch()
-                await appState.fetchRecommendationFromAPI()
-            }
+            Task { await appState.fetchRecommendationFromAPI() }
         }
     }
 
@@ -315,6 +316,8 @@ struct HallRow: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.openURL) private var openURL
 
+    private var hoursProvider: OperatingHoursProvider { .shared }
+
     var body: some View {
         Button(action: onTap) {
             HStack(alignment: .top) {
@@ -430,35 +433,51 @@ struct HallRow: View {
     }
 
     private var openClosedLabel: some View {
-        let (text, color): (String, Color) = {
-            switch hall.status {
-            case .open: return ("Open", .green)
-            case .closed: return ("Closed", .red)
-            case .busy: return ("Open", .orange)
-            case .closed: return (hall.id == "brittain" ? "Temporarily Closed" : "Closed", .red)
-            case .unknown: return ("Temporarily Closed", .red)
-            }
-        }()
+        let info = hoursProvider.displayInfo(for: hall.id)
+        var text = "Temporarily Closed"
+        var color: Color = .red
+        var note: String? = nil
 
-        let hoursNote: String? = {
-            if hall.status == .open {
-                if let closes = hall.closesAt, !closes.isEmpty { return "‧ Closes \(closes)" }
-            } else if hall.status == .closed {
-                if let opens = hall.opensAt, !opens.isEmpty { return "‧ Opens \(opens)" }
+        if hall.id == "brittain" {
+            text = "Temporarily Closed"
+            color = .red
+        } else if let info = info {
+            if info.isOpenNow {
+                text = "Open"
+                color = .green
+                if let closes = info.closesText { note = "‧ Closes \(closes)" }
             } else {
-                if let closes = hall.closesAt, !closes.isEmpty { return "‧ Closes \(closes)" }
-                else if let opens = hall.opensAt, !opens.isEmpty { return "‧ Opens \(opens)" }
+                text = "Closed"
+                color = .red
+                if let opens = info.opensText { note = "‧ Opens \(opens)" }
             }
-            return nil
-        }()
+        } else {
+            switch hall.status {
+            case .open:
+                text = "Open"
+                color = .green
+                if let closes = hall.closesAt, !closes.isEmpty { note = "‧ Closes \(closes)" }
+            case .busy:
+                text = "Open"
+                color = .orange
+                if let closes = hall.closesAt, !closes.isEmpty { note = "‧ Closes \(closes)" }
+            case .closed:
+                text = "Closed"
+                color = .red
+                if let opens = hall.opensAt, !opens.isEmpty { note = "‧ Opens \(opens)" }
+            case .unknown:
+                text = "Temporarily Closed"
+                color = .red
+            }
+        }
 
         return HStack(spacing: 6) {
             Text(text)
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(color)
-            if let note = hoursNote {
-                Text("\(note)")
+            if let note = note {
+                Text(note)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

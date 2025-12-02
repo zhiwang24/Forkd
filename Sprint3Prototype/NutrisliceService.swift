@@ -20,7 +20,7 @@ final class NutrisliceService {
     /// Fetch menu items for a school. `district` is the subdomain (e.g. "techdining"),
     /// `school` is the slug used in the menu URL (e.g. "north-ave-dining-hall"),
     /// `meal` is typically "breakfast" or "lunch".
-    func fetchMenu(district: String, school: String, meal: String, date: Date = Date(), debugDump: Bool = false) async throws -> [NutrisliceItem] {
+    func fetchMenu(district: String, school: String, meal: String, date: Date = Date()) async throws -> [NutrisliceItem] {
         let cal = Calendar(identifier: .gregorian)
         let comps = cal.dateComponents([.year, .month, .day], from: date)
         guard let year = comps.year, let month = comps.month, let day = comps.day else { throw NutrisliceError.invalidURL }
@@ -36,25 +36,6 @@ final class NutrisliceService {
             throw NutrisliceError.httpError(status: http.statusCode)
         }
         guard data.count > 0 else { throw NutrisliceError.noData }
-
-        // If debugDump is enabled, attempt to pretty-print and save the raw JSON for inspection.
-        if debugDump {
-            do {
-                let jsonObj = try JSONSerialization.jsonObject(with: data, options: [])
-                let prettyData = try JSONSerialization.data(withJSONObject: jsonObj, options: [.prettyPrinted])
-                if let prettyString = String(data: prettyData, encoding: .utf8) {
-                    print("[NutrisliceService] Raw JSON (pretty):\n\(prettyString)")
-                }
-                // write to temp file
-                let tmp = NSTemporaryDirectory()
-                let fileName = "nutrislice_\(district)_\(school)_\(meal)_\(year)-\(month)-\(day)_\(UUID().uuidString.prefix(8)).json"
-                let url = URL(fileURLWithPath: tmp).appendingPathComponent(fileName)
-                try prettyData.write(to: url)
-                print("[NutrisliceService] Raw JSON written to: \(url.path)")
-            } catch {
-                print("[NutrisliceService] debugDump failed to serialize/write raw JSON: \(error)")
-            }
-        }
 
         // Try JSONSerialization and parse Nutrislice-specific "menu_items" structure.
         let json = try JSONSerialization.jsonObject(with: data, options: [])

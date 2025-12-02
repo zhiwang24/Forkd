@@ -616,7 +616,7 @@ final class AppState: ObservableObject {
         let mealKey = mealKeyForNow() ?? "breakfast"
         for hall in halls {
             guard let params = nutrisliceParamsForHallID(hall.id) else { continue }
-            await fetchMenuFromNutrislice(for: hall.id, district: params.district, schoolSlug: params.slug, meal: mealKey, date: Date(), debugDump: false)
+            await fetchMenuFromNutrislice(for: hall.id, district: params.district, schoolSlug: params.slug, meal: mealKey, date: Date())
             // small polite pause between requests
             try? await Task.sleep(nanoseconds: 80_000_000)
         }
@@ -633,19 +633,10 @@ final class AppState: ObservableObject {
     /// Fetch today's menu from Nutrislice for a given hall and update the corresponding `DiningHall.menuItems`.
     /// Uses the shared `NutrisliceService` parser and maps items into the app's `MenuItem` model.
     @MainActor
-    func fetchMenuFromNutrislice(for hallID: String, district: String, schoolSlug: String, meal: String = "breakfast", date: Date = Date(), debugDump: Bool = false) async {
+    func fetchMenuFromNutrislice(for hallID: String, district: String, schoolSlug: String, meal: String = "breakfast", date: Date = Date()) async {
         guard let idx = halls.firstIndex(where: { $0.id == hallID }) else { return }
         do {
-            // respect DEBUG build or explicit debugDump
-            let isDebugBuild: Bool = {
-                #if DEBUG
-                return true
-                #else
-                return false
-                #endif
-            }()
-            let doDebug = debugDump || isDebugBuild
-            let items = try await NutrisliceService.shared.fetchMenu(district: district, school: schoolSlug, meal: meal, date: date, debugDump: doDebug)
+            let items = try await NutrisliceService.shared.fetchMenu(district: district, school: schoolSlug, meal: meal, date: date)
             let mapped: [MenuItem] = items.map { nutri in
                 MenuItem(id: nutri.id, name: nutri.name, category: nutri.category, labels: nutri.labels)
             }
