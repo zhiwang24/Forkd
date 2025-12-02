@@ -329,8 +329,4 @@ struct DiningHallDetailView: View {
         let mealKey = currentMealKey() ?? "breakfast"
         await appState.fetchMenuFromNutrislice(for: currentHall.id, district: params.district, schoolSlug: params.slug, meal: mealKey)
     }
-
-    // MARK: - Firestore ratings
-
-    private func fetchMenuItemRatings() async {}
 }

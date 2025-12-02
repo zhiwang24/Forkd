@@ -468,10 +468,6 @@ final class AppState: ObservableObject {
         halls[idx].enforceClosedDisplayStateIfNeeded()
     }
     
-    func submitRating(for itemID: String, in hallID: String, rating newRating: Int) -> (success: Bool, message: String?) {
-        return (false, "Ratings are no longer supported.")
-    }
-    
     /// Submit seating availability for a given hall (e.g. "Plenty", "Some", "Few", "Packed").
     /// Enforces verified users, geofence, and per-hall cooldown similar to wait time submissions.
     func submitSeating(for hallID: String, seating newSeating: String) -> (success: Bool, message: String?) {
