@@ -42,7 +42,7 @@ struct OperatingHoursProvider {
 
     func displayInfo(for hallID: String, date: Date = Date()) -> DisplayInfo? {
         guard let scheduleByDay = schedules[hallID] else { return nil }
-        let weekday = calendar.component(.weekday, from: date) // Sunday = 1 ... Saturday = 7
+        let weekday = calendar.component(.weekday, from: date)
         let minuteOfDay = calendar.component(.hour, from: date) * 60 + calendar.component(.minute, from: date)
 
         if let currentRange = scheduleByDay[weekday]?.first(where: { $0.contains(minuteOfDay) }) {
@@ -91,6 +91,8 @@ struct OperatingHoursProvider {
         let westWeekend = [range(9, 0, 21, 0, "9am", "9pm")]
         let westWeekday = [range(7, 0, 23, 0, "7am", "11pm")]
 
+        let moesDaily = [range(10, 30, 22, 0, "10:30am", "10pm")]
+
         return [
             "north-ave": [
                 1: northWeekend,
@@ -109,6 +111,15 @@ struct OperatingHoursProvider {
                 5: westWeekday,
                 6: westWeekday,
                 7: westWeekend
+            ],
+            "moes": [
+                1: moesDaily,
+                2: moesDaily,
+                3: moesDaily,
+                4: moesDaily,
+                5: moesDaily,
+                6: moesDaily,
+                7: moesDaily
             ]
         ]
     }

@@ -128,7 +128,28 @@ extension DiningHall {
         var parsedItems: [MenuItem] = []
         if let items = dict["menuItems"] as? [[String: Any]] {
             parsedItems = items.map { MenuItem(from: $0, docID: $0["id"] as? String) }
+        } else if let jsonStrings = dict["menuItems"] as? [String] {
+            for entry in jsonStrings {
+                guard let data = entry.data(using: .utf8) else { continue }
+                if let obj = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
+                    parsedItems.append(MenuItem(from: obj, docID: obj["id"] as? String))
+                }
+            }
         }
         self.menuItems = parsedItems
+        self.enforceClosedDisplayStateIfNeeded()
     }
+}
+
+extension DiningHall {
+    mutating func enforceClosedDisplayStateIfNeeded() {
+        if status.isClosedState {
+            waitTime = "Closed"
+            seating = "No reports"
+        }
+    }
+}
+
+extension HallStatus {
+    var isClosedState: Bool { self == .closed || self == .unknown }
 }

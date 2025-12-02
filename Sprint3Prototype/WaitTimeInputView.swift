@@ -27,6 +27,7 @@ struct WaitTimeInputView: View {
 
     // Keep grid columns as a separate computed property to simplify the view builder.
     private var seatingColumns: [GridItem] { [GridItem(.adaptive(minimum: 80), spacing: 8)] }
+    private var hallIsClosed: Bool { appState.hallIsClosed(hall.id) }
 
     // Small helper to reduce expression complexity inside the view body.
     private func seatingButton(at idx: Int) -> AnyView {
@@ -69,6 +70,12 @@ struct WaitTimeInputView: View {
                     inputSection
                     seatingSection
                     submit
+                    if hallIsClosed {
+                        Text("This hall is closed right now. Come back later for updates.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     if let msg = alertMessage {
                         Text(msg)
                             .foregroundStyle(.red)
@@ -183,10 +190,14 @@ struct WaitTimeInputView: View {
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent)
-        .disabled(isSubmitting || ((Int(input) ?? 0) <= 0 && selectedSeatingIndex == nil))
+        .disabled(isSubmitting || hallIsClosed || ((Int(input) ?? 0) <= 0 && selectedSeatingIndex == nil))
     }
 
     private func handleSubmit() {
+        if hallIsClosed {
+            alertMessage = "This hall is closed right now."
+            return
+        }
         // Require a signed-in & verified GT account before allowing updates
         guard appState.firebaseUser != nil, appState.isVerified else {
             alertMessage = "Please sign in with your @gatech.edu account and verify your email before submitting wait times."

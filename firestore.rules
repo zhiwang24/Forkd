@@ -1,50 +1,53 @@
-rules_version = '2'; 
+rules_version = '2';
 
 service cloud.firestore {
     match /databases/{database}/documents {
-    // menu reports
-    match /menu_reports/{docId} {
-      allow create: if request.auth != null
-                    && request.auth.token.email_verified == true
-                    && request.auth.token.email.matches('^.*@gatech\\.edu$');
-      allow read: if true;
-    }
+        function isSignedIn() {
+            return request.auth != null;
+        }
 
-    // recommendation doc written by the recommender API
-    match /recommendations/global {
-      allow read: if true;
-    }
-    
-    // bug reports
-    match /bug_reports/{docId} {
-      allow create: if request.auth != null
-                    && request.auth.token.email_verified == true
-                    && request.auth.token.email.matches('^.*@gatech\\.edu$');
-      allow read: if request.auth != null; // or adjust for admin
-    }
+        function isGatechVerified() {
+            return isSignedIn()
+                && request.auth.token.email_verified == true
+                && request.auth.token.email.matches('(?i)^.*@gatech\\.edu$');
+        }
 
-    // users profile docs (one per uid)
-    match /users/{uid} {
-      allow create: if request.auth != null && request.auth.uid == uid;
-      allow read: if request.auth != null && request.auth.uid == uid;
-      allow update: if request.auth != null && request.auth.uid == uid;
-    }
+        function isHallAdmin() {
+            return isSignedIn() && (request.auth.token.admin == true
+                || request.auth.token.email in ["ayane@gatech.edu", "zhi@gatech.edu"]);
+        }
 
-    // dining halls collection: allow public reads (app needs to read list of halls)
-    // Writes are limited to verified @gatech.edu users (adjust as needed for production/admins)
-    match /halls/{hallId} {
-      allow read: if true;
-      allow create, update, delete: if request.auth != null
-                                   && request.auth.token.email_verified == true
-                                   && request.auth.token.email.matches('^.*@gatech\\.edu$');
+        // menu reports
+        match /menu_reports/{docId} {
+            allow read: if true;
+            allow create: if isGatechVerified();
+        }
+ 
+        // recommendation banner
+        match /recommendations/global {
+            allow read: if true;
+        }
+ 
+        // bug reports
+        match /bug_reports/{docId} {
+            allow read: if isSignedIn();
+            allow create: if isGatechVerified();
+        }
+ 
+        // users profile docs (one per uid)
+        match /users/{uid} {
+            allow read, create, update: if isSignedIn() && request.auth.uid == uid;
+        }
+ 
+        // dining halls: public read, verified GT or admins can write (needed for Moe's seeding)
+        match /halls/{hallId} {
+            allow read: if true;
+            allow create, update, delete: if isGatechVerified() || isHallAdmin();
 
-      // Allow reading a subcollection of menuItems publicly as well
-      match /menuItems/{itemId} {
-        allow read: if true;
-        allow create, update, delete: if request.auth != null
-                                       && request.auth.token.email_verified == true
-                                       && request.auth.token.email.matches('^.*@gatech\\.edu$');
-      }
+            match /menuItems/{itemId} {
+                allow read: if true;
+                allow create, update, delete: if isGatechVerified() || isHallAdmin();
+            }
+        }
     }
-    }
-}
+ }

@@ -415,22 +415,25 @@ struct HallRow: View {
     // Prominent seating-based Busy/Not busy indicator derived from student seating reports
     private var seatingIndicator: some View {
         let s = hall.seating?.lowercased() ?? ""
+        let isClosed = hall.status.isClosedState && hall.id != "brittain"
         let (label, color): (String, Color) = {
+            if isClosed { return ("No reports", .gray) }
             if s.contains("plenty") || s.contains("some") { return ("Not busy", .green) }
             if s.contains("few") || s.contains("packed") { return ("Busy", .orange) }
             return ("No reports", .gray)
         }()
-
-        return HStack(spacing: 8) {
-            HStack(spacing: 6) {
-                Circle().fill(color).frame(width: 10, height: 10)
-                Text(label).font(.subheadline).fontWeight(.semibold)
-            }
-            .padding(.horizontal, 8).padding(.vertical, 6)
-            .background(color.opacity(0.12))
-            .clipShape(Capsule())
-        }
-    }
+        let bgColor = color == .gray ? Color.gray.opacity(0.2) : color.opacity(0.12)
+ 
+         return HStack(spacing: 8) {
+             HStack(spacing: 6) {
+                 Circle().fill(color).frame(width: 10, height: 10)
+                 Text(label).font(.subheadline).fontWeight(.semibold)
+             }
+             .padding(.horizontal, 8).padding(.vertical, 6)
+             .background(bgColor)
+             .clipShape(Capsule())
+         }
+     }
 
     private var openClosedLabel: some View {
         let info = hoursProvider.displayInfo(for: hall.id)

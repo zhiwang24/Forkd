@@ -151,7 +151,7 @@ final class AppState: ObservableObject {
         switch auth {
         case .authorizedAlways, .authorizedWhenInUse:
             // Ensure we have a location
-            if let last = locationManager.lastLocation {
+            if locationManager.lastLocation != nil {
                 let res = locationManager.isWithinGeofence(lat: lat, lon: lon, radiusMeters: geofenceRadiusMeters, maxAccuracyMeters: geofenceMaxAccuracyMeters)
                 if res.inside { return (true, nil) }
                 let distText = res.distance != nil ? formattedDistance(fromMeters: res.distance!) : "unknown"
@@ -214,6 +214,11 @@ final class AppState: ObservableObject {
             .sink { [weak self] date in
                 Task { @MainActor in self?.now = date }
             }
+        statusTimer = Timer.publish(every: 60, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.reconcileHallStatuses() }
+            }
 
         // Observe Firebase auth state
         authHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
@@ -221,7 +226,6 @@ final class AppState: ObservableObject {
             Task { @MainActor in
                 self?.firebaseUser = user
                 self?.isVerified = verified
-                print("[AppState] auth state changed - user: \(user?.uid ?? "none"), verified: \(verified)")
             }
         }
 
@@ -240,6 +244,7 @@ final class AppState: ObservableObject {
         if let h = authHandle { Auth.auth().removeStateDidChangeListener(h) }
         locationCancellable?.cancel()
         clockCancellable?.cancel()
+        statusTimer?.cancel()
         hallsListener?.remove()
         recListener?.remove()
     }
@@ -262,7 +267,6 @@ final class AppState: ObservableObject {
                 if let error = error {
                     self.hallsLoading = false
                     self.hallsError = error.localizedDescription
-                    print("[AppState] halls listener error: \(error)")
                     return
                 }
                 guard let snapshot = snapshot else {
@@ -278,7 +282,8 @@ final class AppState: ObservableObject {
                 }
                 // Sort by name to keep deterministic order when not using proximity
                 newHalls.sort { $0.name < $1.name }
-                self.halls = newHalls
+                self.halls = self.normalizedHalls(newHalls)
+                self.reconcileHallStatuses()
                 self.hallsLoading = false
                 self.hallsError = nil
             }
@@ -295,22 +300,10 @@ final class AppState: ObservableObject {
             .document("global")
             .addSnapshotListener { [weak self] snapshot, error in
                 Task { @MainActor in
-                    if let error = error {
-                        print("[AppState] recommendation listener error: \(error)")
-                        return
-                    }
-                    guard let data = snapshot?.data() else {
-                        print("[AppState] recommendation listener: no data in snapshot")
-                        return
-                    }
-                    print("[AppState] recommendation listener data: \(data)")
+                    if error != nil { return }
+                    guard let data = snapshot?.data() else { return }
                     let rec = Recommendation.from(data: data)
                     self?.recommendation = rec
-                    if let r = rec, let pick = r.pick {
-                        print("[AppState] recommendation updated -> \(pick.name) (hallId: \(pick.hallId)) reason: \(pick.reason)")
-                    } else {
-                        print("[AppState] recommendation decoded but no pick")
-                    }
                 }
             }
     }
@@ -322,13 +315,10 @@ final class AppState: ObservableObject {
         do {
             let snap = try await db.collection("recommendations").document("global").getDocument()
             if let data = snap.data() {
-                print("[AppState] recommendation fetchOnce data: \(data)")
                 let rec = Recommendation.from(data: data)
                 Task { @MainActor in self.recommendation = rec }
             }
-        } catch {
-            print("[AppState] fetchRecommendationOnce error: \(error)")
-        }
+        } catch {}
     }
 
     /// Force refresh halls snapshot by fetching once.
@@ -345,16 +335,16 @@ final class AppState: ObservableObject {
                 newHalls.append(hall)
             }
             newHalls.sort { $0.name < $1.name }
-            self.halls = newHalls
+            self.halls = self.normalizedHalls(newHalls)
+            self.reconcileHallStatuses()
             self.hallsLoading = false
             self.hallsError = nil
         } catch {
             self.hallsLoading = false
             self.hallsError = error.localizedDescription
-            print("[AppState] refreshHallsOnce error: \(error)")
         }
     }
-
+    
     // ===== Submission gating & client-side cooldowns =====
     // Persist per-hall+action last-submission timestamps to UserDefaults to prevent rapid repeat submissions.
     private enum SubmissionAction: String {
@@ -366,6 +356,8 @@ final class AppState: ObservableObject {
     private let submissionCooldownSeconds: TimeInterval = 5 * 60
     private let waitSubmissionThreshold = 5
     private var pendingWaitVotes: [String: [Int: Int]] = [:]
+    private let operatingHours = OperatingHoursProvider.shared
+    private var statusTimer: AnyCancellable? = nil
 
     private func lastSubmissionKey(hallID: String, action: SubmissionAction) -> String {
         return "lastSubmission:\(hallID):\(action.rawValue)"
@@ -397,18 +389,24 @@ final class AppState: ObservableObject {
         return res.allowed ? 0 : res.remaining
     }
 
-    func updateWaitTime(for hallID: String, to minutes: Int) -> (success: Bool, message: String?) {
-        // Enforce verified-user gating
-        guard isVerified else {
-            let msg = "Please verify your @gatech.edu email before submitting."
-            print("[AppState] updateWaitTime - blocked: user not verified")
-            return (false, msg)
-        }
+    func hallIsClosed(_ hallID: String) -> Bool {
+        guard let hall = halls.first(where: { $0.id == hallID }) else { return false }
+        return hall.status.isClosedState
+    }
+ 
+     func updateWaitTime(for hallID: String, to minutes: Int) -> (success: Bool, message: String?) {
+        if hallIsClosed(hallID) {
+             return (false, "This hall is closed right now.")
+         }
+         // Enforce verified-user gating
+         guard isVerified else {
+             let msg = "Please verify your @gatech.edu email before submitting."
+             return (false, msg)
+         }
 
         // Client-side geofence check: ensure user is within geofence for this hall
         let geo = checkGeofence(for: hallID)
         guard geo.allowed else {
-            print("[AppState] updateWaitTime - blocked by geofence: \(geo.message ?? "no location")")
             return (false, geo.message)
         }
 
@@ -417,7 +415,6 @@ final class AppState: ObservableObject {
         let allowed = canSubmit(hallID: hallID, action: action)
         guard allowed.allowed else {
             let msg = "Please wait \(Int(allowed.remaining))s before submitting another update for this dining hall."
-            print("[AppState] updateWaitTime - blocked by cooldown, remaining: \(Int(allowed.remaining))s")
             return (false, msg)
         }
 
@@ -429,7 +426,6 @@ final class AppState: ObservableObject {
         hallVotes[minutes] = newCount
         pendingWaitVotes[hallID] = hallVotes
         AnalyticsService.shared.logWaitVoteQueued(hallID: hallID, minutes: minutes, votesRemaining: max(0, waitSubmissionThreshold - newCount))
-        print("[AppState] updateWaitTime - queued vote for \(hallID) @ \(minutes) min (\(newCount)/\(waitSubmissionThreshold))")
 
         if newCount < waitSubmissionThreshold {
             return (true, "Thanks! We'll update once enough students agree.")
@@ -448,7 +444,6 @@ final class AppState: ObservableObject {
 
         Task { await persistWaitTimeToFirestore(hallID: hallID, minutes: minutes) }
 
-        print("[AppState] updateWaitTime - applied aggregated update for \(halls[idx].name) -> \(newText)")
         return (true, nil)
     }
 
@@ -464,15 +459,13 @@ final class AppState: ObservableObject {
         ]
         do {
             try await db.collection("halls").document(hallID).setData(data, merge: true)
-            print("[AppState] persistWaitTimeToFirestore - updated \(hallID)")
-        } catch {
-            print("[AppState] persistWaitTimeToFirestore error: \(error)")
-        }
+        } catch {}
     }
 
     func updateStatus(for hallID: String, to newStatus: HallStatus) {
         guard let idx = halls.firstIndex(where: { $0.id == hallID }) else { return }
         halls[idx].status = newStatus
+        halls[idx].enforceClosedDisplayStateIfNeeded()
     }
     
     func submitRating(for itemID: String, in hallID: String, rating newRating: Int) -> (success: Bool, message: String?) {
@@ -482,17 +475,18 @@ final class AppState: ObservableObject {
     /// Submit seating availability for a given hall (e.g. "Plenty", "Some", "Few", "Packed").
     /// Enforces verified users, geofence, and per-hall cooldown similar to wait time submissions.
     func submitSeating(for hallID: String, seating newSeating: String) -> (success: Bool, message: String?) {
-        // Enforce verified-user gating
-        guard isVerified else {
-            let msg = "Please verify your @gatech.edu email before submitting seating availability."
-            print("[AppState] submitSeating - blocked: user not verified")
-            return (false, msg)
-        }
+        if hallIsClosed(hallID) {
+             return (false, "This hall is closed right now.")
+         }
+         // Enforce verified-user gating
+         guard isVerified else {
+             let msg = "Please verify your @gatech.edu email before submitting seating availability."
+             return (false, msg)
+         }
 
         // Client-side geofence check
         let geo = checkGeofence(for: hallID)
         guard geo.allowed else {
-            print("[AppState] submitSeating - blocked by geofence: \(geo.message ?? "no location")")
             return (false, geo.message)
         }
 
@@ -501,19 +495,18 @@ final class AppState: ObservableObject {
         let allowed = canSubmit(hallID: hallID, action: action)
         guard allowed.allowed else {
             let msg = "Please wait \(Int(allowed.remaining))s before submitting another seating update for this dining hall."
-            print("[AppState] submitSeating - blocked by cooldown, remaining: \(Int(allowed.remaining))s")
             return (false, msg)
         }
-
+ 
         guard let idx = halls.firstIndex(where: { $0.id == hallID }) else { return (false, nil) }
         halls[idx].seating = newSeating
         halls[idx].seatingLastUpdated = "now"
         halls[idx].seatingVerifiedCount += 1
         // record submission time
         recordSubmission(hallID: hallID, action: action)
-        print("[AppState] submitSeating - \(halls[idx].name) seating -> \(newSeating), verifiedCount -> \(halls[idx].seatingVerifiedCount)")
-        return (true, nil)
-    }
+        Task { await persistSeatingToFirestore(hallID: hallID, seating: newSeating) }
+         return (true, nil)
+     }
     
     // MARK: - Authentication helpers
     func signUp(firstName: String, lastName: String, email: String, password: String, completion: @escaping (Error?) -> Void) {
@@ -543,8 +536,6 @@ final class AppState: ObservableObject {
                 change.commitChanges { _ in
                     db.collection("users").document(user.uid).setData(data) { writeError in
                         if let writeError = writeError { completion(writeError); return }
-                        // optionally sign out so they must verify before using app features
-                        do { try Auth.auth().signOut() } catch { /* ignore */ }
                         completion(nil)
                     }
                 }
@@ -566,7 +557,7 @@ final class AppState: ObservableObject {
     }
 
     func signOut() {
-        do { try Auth.auth().signOut(); firebaseUser = nil; isVerified = false } catch { print("[AppState] signOut error: \(error)") }
+        do { try Auth.auth().signOut(); firebaseUser = nil; isVerified = false } catch {}
     }
 
     func resendVerification(completion: @escaping (Error?) -> Void) {
@@ -617,7 +608,6 @@ final class AppState: ObservableObject {
         for hall in halls {
             guard let params = nutrisliceParamsForHallID(hall.id) else { continue }
             await fetchMenuFromNutrislice(for: hall.id, district: params.district, schoolSlug: params.slug, meal: mealKey, date: Date())
-            // small polite pause between requests
             try? await Task.sleep(nanoseconds: 80_000_000)
         }
     }
@@ -626,7 +616,7 @@ final class AppState: ObservableObject {
         guard let url = URL(string: "https://forkd-rec.vercel.app/api/recommend") else { return }
         var req = URLRequest(url: url)
         req.addValue("apple", forHTTPHeaderField: "x-api-key")
-        do { _ = try await URLSession.shared.data(for: req) } catch { print("[AppState] recommend API call failed: \(error)") }
+        do { _ = try await URLSession.shared.data(for: req) } catch {}
     }
 
     // MARK: - Nutrislice integration
@@ -641,9 +631,50 @@ final class AppState: ObservableObject {
                 MenuItem(id: nutri.id, name: nutri.name, category: nutri.category, labels: nutri.labels)
             }
             halls[idx].menuItems = mapped
-            print("[AppState] fetchMenuFromNutrislice -> updated \(halls[idx].name) with \(mapped.count) items")
-        } catch {
-            print("[AppState] fetchMenuFromNutrislice error: \(error)")
+        } catch {}
+    }
+
+    private func normalizedHalls(_ halls: [DiningHall] ) -> [DiningHall] {
+        return halls.map { hall in
+            var copy = hall
+            copy.enforceClosedDisplayStateIfNeeded()
+            return copy
         }
+    }
+
+    private func reconcileHallStatuses(now: Date = Date()) {
+        guard !halls.isEmpty else { return }
+        var dirty: [(String, HallStatus)] = []
+        for idx in halls.indices {
+            guard let info = operatingHours.displayInfo(for: halls[idx].id, date: now) else { continue }
+            let target: HallStatus = info.isOpenNow ? .open : .closed
+            if halls[idx].status != target {
+                halls[idx].status = target
+                halls[idx].enforceClosedDisplayStateIfNeeded()
+                dirty.append((halls[idx].id, target))
+            }
+        }
+        guard !dirty.isEmpty else { return }
+        Task { await persistHallStatuses(dirty) }
+    }
+
+    private func persistHallStatuses(_ updates: [(String, HallStatus)]) async {
+        if FirebaseApp.app() == nil { FirebaseApp.configure() }
+        let db = Firestore.firestore()
+        for (docID, status) in updates {
+            try? await db.collection("halls").document(docID).setData(["status": status.rawValue], merge: true)
+        }
+    }
+
+    private func persistSeatingToFirestore(hallID: String, seating: String) async {
+        if FirebaseApp.app() == nil { FirebaseApp.configure() }
+        let db = Firestore.firestore()
+        let formatter = ISO8601DateFormatter()
+        let data: [String: Any] = [
+            "seating": seating,
+            "seatingLastUpdated": formatter.string(from: Date()),
+            "seatingVerifiedCount": halls.first(where: { $0.id == hallID })?.seatingVerifiedCount ?? 0
+        ]
+        try? await db.collection("halls").document(hallID).setData(data, merge: true)
     }
 }

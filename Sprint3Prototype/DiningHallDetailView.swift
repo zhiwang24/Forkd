@@ -22,6 +22,7 @@ struct DiningHallDetailView: View {
     private var currentHall: DiningHall {
         appState.halls.first(where: { $0.id == hall.id }) ?? hall
     }
+    private var hallIsClosed: Bool { appState.hallIsClosed(currentHall.id) }
 
     // Initialize collapsedStations to include all stations so the UI begins collapsed.
     private func initializeCollapsedIfNeeded() {
@@ -98,7 +99,11 @@ struct DiningHallDetailView: View {
 
     private var statusDot: some View {
         let color: Color = {
-            switch currentHall.status { case .open: return .green; case .busy: return .yellow; case .closed: return .red; case .unknown: return .gray }
+            switch currentHall.status {
+            case .open: return .green
+            case .busy: return .yellow
+            case .closed, .unknown: return .red
+            }
         }()
         return Circle().fill(color).frame(width: 8, height: 8)
     }
@@ -117,7 +122,7 @@ struct DiningHallDetailView: View {
                     Text(currentHall.waitTime)
                         .font(.title2).bold()
                         .foregroundStyle(Color.accentColor)
-                    Text("estimated")
+                    Text(hallIsClosed ? "closed" : "estimated")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -135,6 +140,15 @@ struct DiningHallDetailView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
+            .disabled(hallIsClosed)
+            if hallIsClosed {
+                let message = (currentHall.status == .unknown || currentHall.id == "brittain")
+                    ? "This hall is temporarily closed, so new wait reports are paused."
+                    : "This hall is closed, so new wait reports are paused."
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(12)
         .background(.thinMaterial)
