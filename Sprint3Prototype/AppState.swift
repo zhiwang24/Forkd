@@ -20,6 +20,8 @@ struct Recommendation: Codable {
         let reason: String
         let sampleItems: [String]
         let score: Double?
+        let lat: Double?
+        let lon: Double?
     }
     struct RecWeather: Codable {
         let tempC: Double?
@@ -29,6 +31,9 @@ struct Recommendation: Codable {
     let updatedAt: TimeInterval?
     let weather: RecWeather?
     let meal: String?
+    let desiredTags: [String]
+    let picks: [Pick]
+    // Legacy single pick field from the old shape; keep for backward compatibility.
     let pick: Pick?
 }
 
@@ -55,7 +60,40 @@ extension Recommendation {
             return RecWeather(tempC: temp, precipitation: precip, condition: cond)
         }()
         let meal = string(from: data["meal"])
-        let pick: Pick? = {
+        let desiredTags: [String] = {
+            if let tags = data["desiredTags"] as? [String] { return tags }
+            if let anyTags = data["desiredTags"] as? [Any] {
+                return anyTags.compactMap { string(from: $0) }
+            }
+            return []
+        }()
+        func parsePickArray(_ any: Any?) -> [Pick] {
+            guard let arr = any as? [Any] else { return [] }
+            return arr.compactMap { elem in
+                guard let p = elem as? [String: Any] else { return nil }
+                let hallId = string(from: p["hallId"]) ?? string(from: p["id"])
+                let name = string(from: p["name"]) ?? string(from: p["hallName"])
+                guard let hid = hallId, let nm = name else { return nil }
+                let reason = string(from: p["reason"]) ?? ""
+                let samples: [String] = {
+                    if let arr = p["sampleItems"] as? [String] { return arr }
+                    if let arr = p["sampleItems"] as? [Any] {
+                        return arr.compactMap { string(from: $0) }
+                    }
+                    return []
+                }()
+                let score = (p["score"] as? NSNumber)?.doubleValue
+                let lat = (p["lat"] as? NSNumber)?.doubleValue
+                let lon = (p["lon"] as? NSNumber)?.doubleValue
+                return Pick(hallId: hid, name: nm, reason: reason, sampleItems: samples, score: score, lat: lat, lon: lon)
+            }
+        }
+        // Prefer new "picks" key; support array under legacy "pick" key.
+        var picks: [Pick] = parsePickArray(data["picks"])
+        if picks.isEmpty {
+            picks = parsePickArray(data["pick"])
+        }
+        let legacyPick: Pick? = {
             guard let p = data["pick"] as? [String: Any] else { return nil }
             let hallId = string(from: p["hallId"]) ?? string(from: p["id"])
             let name = string(from: p["name"]) ?? string(from: p["hallName"])
@@ -69,9 +107,13 @@ extension Recommendation {
                 return []
             }()
             let score = (p["score"] as? NSNumber)?.doubleValue
-            return Pick(hallId: hid, name: nm, reason: reason, sampleItems: samples, score: score)
+            let lat = (p["lat"] as? NSNumber)?.doubleValue
+            let lon = (p["lon"] as? NSNumber)?.doubleValue
+            return Pick(hallId: hid, name: nm, reason: reason, sampleItems: samples, score: score, lat: lat, lon: lon)
         }()
-        return Recommendation(updatedAt: updatedAt, weather: weather, meal: meal, pick: pick)
+        let resolvedPick = legacyPick ?? picks.first
+        let resolvedPicks = picks.isEmpty ? (resolvedPick.map { [$0] } ?? []) : picks
+        return Recommendation(updatedAt: updatedAt, weather: weather, meal: meal, desiredTags: desiredTags, picks: resolvedPicks, pick: resolvedPick)
     }
 }
 
@@ -178,6 +220,25 @@ final class AppState: ObservableObject {
 
     // Recommendation document (written by the external recommender service)
     @Published var recommendation: Recommendation? = nil
+
+    // Recommended pick, biased to the nearest hall (falls back to score/first if no location).
+    var recommendedPick: Recommendation.Pick? {
+        guard let rec = recommendation else { return nil }
+        let candidates = rec.picks.isEmpty ? (rec.pick.map { [$0] } ?? []) : rec.picks
+        guard !candidates.isEmpty else { return nil }
+        if let loc = locationManager.lastLocation {
+            let nearest = candidates.compactMap { pick -> (Recommendation.Pick, Double)? in
+                guard let lat = pick.lat, let lon = pick.lon else { return nil }
+                let dist = loc.distance(from: CLLocation(latitude: lat, longitude: lon))
+                return (pick, dist)
+            }.min { $0.1 < $1.1 }?.0
+            if let nearest = nearest { return nearest }
+        }
+        if let scored = candidates.max(by: { ($0.score ?? -Double.infinity) < ($1.score ?? -Double.infinity) }) {
+            return scored
+        }
+        return candidates.first
+    }
 
     // Firestore listener handle
     private var hallsListener: ListenerRegistration? = nil

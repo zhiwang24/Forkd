@@ -56,6 +56,7 @@ struct ContentView: View {
                             .padding()
                         }
                         .refreshable {
+                            await appState.fetchRecommendationFromAPI()
                             await appState.fetchMenusOnLaunch()
                             appState.locationManager.requestLocation()
                             await appState.refreshHallsOnce()
@@ -159,7 +160,7 @@ struct ContentView: View {
 
     private var recommendationCard: some View {
         Group {
-            if let rec = appState.recommendation, let pick = rec.pick {
+            if let rec = appState.recommendation, let pick = appState.recommendedPick {
                 Button {
                     withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
                         recExpanded.toggle()
@@ -193,6 +194,19 @@ struct ContentView: View {
                                     Image(systemName: "clock")
                                         .imageScale(.small)
                                     Text(hallWait)
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.accentColor.opacity(0.12))
+                                .clipShape(Capsule())
+                            }
+                            if let dist = distanceLabel(for: pick) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "location.fill")
+                                        .imageScale(.small)
+                                    Text(dist)
                                         .font(.caption)
                                         .fontWeight(.semibold)
                                 }
@@ -277,8 +291,13 @@ struct ContentView: View {
     }
 
     private var sortedHalls: [DiningHall] {
+        let recommendedID = appState.recommendedPick?.hallId
         let mgr = appState.locationManager
         return appState.halls.sorted { a, b in
+            if let rec = recommendedID {
+                if a.id == rec && b.id != rec { return true }
+                if b.id == rec && a.id != rec { return false }
+            }
             func distance(for h: DiningHall) -> Double? {
                 guard let lat = h.lat, let lon = h.lon else { return nil }
                 return mgr.distanceTo(lat: lat, lon: lon)
@@ -292,6 +311,12 @@ struct ContentView: View {
             case (_?, nil): return true
             }
         }
+    }
+
+    private func distanceLabel(for pick: Recommendation.Pick) -> String? {
+        guard let lat = pick.lat, let lon = pick.lon else { return nil }
+        guard let meters = appState.locationManager.distanceTo(lat: lat, lon: lon) else { return nil }
+        return appState.formattedDistance(fromMeters: meters)
     }
 
     private func iconForWeather(_ condition: String?) -> String {
